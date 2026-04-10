@@ -6,6 +6,7 @@
 <title>KreyaConnect — AI-Powered Meetings</title>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
@@ -155,11 +156,11 @@ footer{text-align:center;padding:18px;color:var(--text3);font-size:12px;border-t
 @keyframes hb{0%,100%{transform:translateY(0);}50%{transform:translateY(-5px);}}
 
 /* CONTROLS */
-.controls{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:var(--bg2);border-top:1px solid var(--border);flex-shrink:0;position:relative;gap:6px;}
+.controls{display:flex;align-items:center;justify-content:space-between;padding:10px 16px 30px;background:var(--bg2);border-top:1px solid var(--border);flex-shrink:0;position:relative;gap:6px;}
 .c-left{min-width:110px;font-size:10px;color:var(--text3);}
-.c-center{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center;}
-.c-right{min-width:110px;display:flex;justify-content:flex-end;gap:5px;}
-.cb{width:46px;height:46px;border-radius:50%;border:none;display:flex;align-items:center;justify-content:center;font-size:18px;transition:all 0.16s;position:relative;flex-shrink:0;}
+.c-center{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center;padding-top:4px;}
+.c-right{min-width:110px;display:flex;justify-content:flex-end;gap:5px;align-self:flex-start;}
+.cb{width:48px;height:48px;border-radius:50%;border:none;display:flex;align-items:center;justify-content:center;font-size:19px;transition:all 0.16s;position:relative;flex-shrink:0;}
 .cb-n{background:rgba(255,255,255,0.07);color:var(--text);}
 .cb-n:hover{background:rgba(255,255,255,0.13);}
 .cb-a{background:rgba(99,102,241,0.2);color:var(--accent);}
@@ -171,8 +172,9 @@ footer{text-align:center;padding:18px;color:var(--text3);font-size:12px;border-t
 @keyframes rp{0%,100%{background:rgba(239,68,68,0.32);}50%{background:rgba(239,68,68,0.5);}}
 .cb-end{background:var(--red);color:#fff;border-radius:24px;width:auto;padding:0 15px;font-size:13px;font-weight:600;}
 .cb-end:hover{opacity:0.88;}
-.cb-label{position:absolute;bottom:-14px;left:50%;transform:translateX(-50%);font-size:9px;color:var(--text3);white-space:nowrap;pointer-events:none;}
-.react-pop{position:absolute;bottom:68px;left:50%;transform:translateX(-50%);background:var(--card);border:1px solid var(--border);border-radius:13px;padding:7px 10px;display:flex;gap:3px;opacity:0;pointer-events:none;transition:opacity 0.16s;z-index:100;box-shadow:0 8px 26px rgba(0,0,0,0.52);}
+.cb-wrap{display:flex;flex-direction:column;align-items:center;gap:3px;flex-shrink:0;}
+.cb-label{font-size:9px;color:var(--text3);white-space:nowrap;text-align:center;line-height:1;margin-top:2px;}
+.react-pop{position:absolute;bottom:88px;left:50%;transform:translateX(-50%);background:var(--card);border:1px solid var(--border);border-radius:13px;padding:7px 10px;display:flex;gap:3px;opacity:0;pointer-events:none;transition:opacity 0.16s;z-index:100;box-shadow:0 8px 26px rgba(0,0,0,0.52);}
 .react-pop.show{opacity:1;pointer-events:all;}
 .rbtn{background:none;border:none;font-size:24px;padding:4px;border-radius:8px;transition:all 0.12s;}
 .rbtn:hover{background:rgba(255,255,255,0.1);transform:scale(1.3);}
@@ -287,8 +289,8 @@ footer{text-align:center;padding:18px;color:var(--text3);font-size:12px;border-t
   .pj-panel{width:100%;}
   .c-left,.c-right{display:none;}
   .side-panel.open{width:100%;position:fixed;inset:0;z-index:200;}
-  .cb-label{display:none;}
-  .cb{width:40px;height:40px;font-size:16px;}
+  .cb{width:40px;height:40px;font-size:15px;}
+  .cb-label{font-size:8px;}
   .bg-grid{grid-template-columns:repeat(3,1fr);}
 }
 </style>
@@ -318,7 +320,7 @@ footer{text-align:center;padding:18px;color:var(--text3);font-size:12px;border-t
         <span class="g-name" id="g-name"></span>
       </div>
       <button class="btn btn-ghost btn-sm" id="g-signin-nav" onclick="showGoogleSignin()">🔗 Sign In</button>
-      <button class="btn btn-ghost btn-sm" onclick="showAIKeyModal()">⚡ AI Key</button>
+      <button class="btn btn-ghost btn-sm" onclick="showAIKeyModal()">⚡ AI Settings</button>
     </div>
   </nav>
   <div class="hero">
@@ -425,16 +427,16 @@ footer{text-align:center;padding:18px;color:var(--text3);font-size:12px;border-t
     <div class="controls">
       <div class="c-left" id="c-name">You</div>
       <div class="c-center">
-        <button class="cb cb-n" id="btn-mic" onclick="toggleMic()">🎙️<span class="cb-label">Mute</span></button>
-        <button class="cb cb-n" id="btn-cam" onclick="toggleCam()">📷<span class="cb-label">Camera</span></button>
-        <button class="cb cb-n" id="btn-share" onclick="toggleShare()">🖥️<span class="cb-label">Share</span></button>
-        <button class="cb cb-n" id="btn-react" onclick="document.getElementById('react-pop').classList.toggle('show')">😀<span class="cb-label">React</span></button>
-        <button class="cb cb-n" id="btn-hand" onclick="toggleHand()">✋<span class="cb-label">Hand</span></button>
-        <button class="cb cb-n" id="btn-bg" onclick="showModal('bg-overlay')">🖼️<span class="cb-label">BG</span></button>
-        <button class="cb cb-n" id="btn-ts" onclick="toggleTranscript()">📝<span class="cb-label">Transcript</span></button>
-        <button class="cb cb-rec" id="btn-rec" onclick="toggleRecording()">⏺️<span class="cb-label">Record</span></button>
-        <button class="cb cb-a" onclick="tp('ai')">🤖<span class="cb-label">AI</span></button>
-        <button class="cb cb-end" onclick="showModal('end-overlay')">📞 End</button>
+        <div class="cb-wrap"><button class="cb cb-n" id="btn-mic" onclick="toggleMic()">🎙️</button><span class="cb-label">Mute</span></div>
+        <div class="cb-wrap"><button class="cb cb-n" id="btn-cam" onclick="toggleCam()">📷</button><span class="cb-label">Camera</span></div>
+        <div class="cb-wrap"><button class="cb cb-n" id="btn-share" onclick="toggleShare()">🖥️</button><span class="cb-label">Share</span></div>
+        <div class="cb-wrap"><button class="cb cb-n" id="btn-react" onclick="document.getElementById('react-pop').classList.toggle('show')">😀</button><span class="cb-label">React</span></div>
+        <div class="cb-wrap"><button class="cb cb-n" id="btn-hand" onclick="toggleHand()">✋</button><span class="cb-label">Hand</span></div>
+        <div class="cb-wrap"><button class="cb cb-n" id="btn-bg" onclick="showModal('bg-overlay')">🖼️</button><span class="cb-label">BG</span></div>
+        <div class="cb-wrap"><button class="cb cb-n" id="btn-ts" onclick="toggleTranscript()">📝</button><span class="cb-label">Transcript</span></div>
+        <div class="cb-wrap"><button class="cb cb-rec" id="btn-rec" onclick="toggleRecording()">⏺️</button><span class="cb-label" id="rec-label">Record</span></div>
+        <div class="cb-wrap"><button class="cb cb-a" onclick="tp('ai')">🤖</button><span class="cb-label">AI</span></div>
+        <div class="cb-wrap"><button class="cb cb-end" onclick="showModal('end-overlay')">📞 End</button><span class="cb-label" style="color:var(--red);">Leave</span></div>
       </div>
       <div class="c-right">
         <button class="btn btn-ghost btn-sm" onclick="tp('participants')">👥 People</button>
@@ -535,14 +537,14 @@ footer{text-align:center;padding:18px;color:var(--text3);font-size:12px;border-t
 
 <div class="overlay" id="aikey-overlay">
   <div class="modal">
-    <h3>⚡ AI Assistant Key</h3>
-    <p class="sub">Enter your AI API key to unlock all 12 content generation features. Stored in this session only.</p>
-    <div class="info-box">Your key is used directly in your browser and is never stored or shared anywhere.</div>
-    <label>API Key</label>
+    <h3>⚡ AI Assistant Settings</h3>
+    <p class="sub">Enter your key to unlock all 12 AI content generation features. Stored only in this session.</p>
+    <div class="info-box">Your key is used directly in your browser and is never stored or shared anywhere outside this page.</div>
+    <label>Key</label>
     <input class="input" id="aikey-inp" type="password" placeholder="sk-ant-api03-…" style="margin-bottom:8px;">
     <div class="modal-btns">
       <button class="btn btn-ghost" onclick="closeModal('aikey-overlay')">Cancel</button>
-      <button class="btn btn-primary" onclick="saveAIKey()">Save Key</button>
+      <button class="btn btn-primary" onclick="saveAIKey()">Save</button>
     </div>
   </div>
 </div>
@@ -622,13 +624,18 @@ const S={
   timerSec:0,timerInt:null,
   transcript:[],transcribing:false,recognition:null,
   apiKey:'',
-  participants:{},
+  participants:{},       // {userId: {name,color,muted,camOn,handRaised,conn}}
   pendingKnocker:null,
-  channel:null,
+  peer:null,             // PeerJS instance
+  hostConn:null,         // joiner's DataConnection to host
+  guestConns:{},         // host's DataConnections to each guest
+  channel:null,          // kept for same-device fallback
   recording:false,mediaRecorder:null,recChunks:[],
   recCanvas:null,recCtx:null,recAnim:null,recAudioCtx:null,
   bgAnim:null,
   gUser:null,
+  _camVid:null,
+  _scrVid:null,
 };
 
 // ════════════════════════════════════════════
@@ -740,66 +747,279 @@ async function enterMeeting(noCam){
   const n=($('meet-name').value||'').trim();if(n)S.name=n;
   if(noCam&&S.pjStream)S.pjStream.getVideoTracks().forEach(t=>t.enabled=false);
   S.muted=S.pjMuted;S.camOn=noCam?false:S.pjCamOn;S.stream=S.pjStream;
-  // Directly start meeting without lobby
-  startMeeting();
+  if(S.isHost)startMeeting();else goLobby();
 }
 
 // ════════════════════════════════════════════
 // LOBBY
 // ════════════════════════════════════════════
 function goLobby(){
-  // Bypassed - all users join directly to meeting
-  startMeeting();
+  setScreen('s-lobby');
+  $('lobby-id').textContent=S.meetingId;
+  $('lobby-av').textContent=S.name[0].toUpperCase();
+  toast('Connecting to host…');
+  connectAsGuest();
 }
-function leaveLobby(){stopAll();goHome();}
+function leaveLobby(){
+  if(S.hostConn)S.hostConn.close();
+  if(S.peer)S.peer.destroy();
+  stopAll();goHome();
+}
 
 // ════════════════════════════════════════════
-// BROADCAST CHANNEL
+// PEERJS SIGNALING — works across devices/browsers
+// Host peer ID  = kreya-{meetingId}-h
+// Guest peer ID = kreya-{MY_ID}
 // ════════════════════════════════════════════
-function setupChannel(){
-  if(S.channel)S.channel.close();
-  S.channel=new BroadcastChannel('kreya-'+S.meetingId);
-  S.channel.onmessage=e=>handleMsg(e.data);
+
+function hostPeerId(){return'kreya-'+S.meetingId.replace(/-/g,'x')+'-h';}
+function myPeerId(){return'kuser-'+MY_ID;}
+
+// HOST: opens PeerJS, listens for guest connections
+function openHostPeer(){
+  if(typeof Peer==='undefined'){toast('⚠️ PeerJS not loaded — signaling unavailable');return;}
+  S.peer=new Peer(hostPeerId(),{debug:0});
+  S.peer.on('open',()=>{toast('Meeting ready — share the code!');});
+  S.peer.on('error',err=>{
+    if(err.type==='unavailable-id'){
+      // Host ID already taken — just open with random ID and still work
+      S.peer=new Peer(myPeerId(),{debug:0});
+      setupHostListeners();
+    }
+  });
+  setupHostListeners();
 }
-function broadcast(msg){if(S.channel)S.channel.postMessage(msg);}
-function handleMsg(msg){
+
+function setupHostListeners(){
+  if(!S.peer)return;
+  S.peer.on('connection',conn=>{
+    // A guest is knocking
+    conn.on('open',()=>{
+      conn.on('data',data=>{handleGuestMsg(conn,data);});
+      conn.on('close',()=>{
+        const uid=conn.metadata?.userId;
+        if(uid&&S.participants[uid])removePeer(uid,S.participants[uid].name);
+        delete S.guestConns[conn.metadata?.userId||conn.peer];
+      });
+    });
+  });
+}
+
+function handleGuestMsg(conn,msg){
   switch(msg.type){
-    case'knock':break;
-    case'knock-cancel':break;
-    case'admitted':break;
-    case'rejected':break;
-    case'participant-joined':if(msg.userId!==MY_ID){addPeer(msg.userId,msg.name,msg.color);addSys(`${msg.name} joined`);}break;
-    case'participant-left':if(msg.userId!==MY_ID)removePeer(msg.userId,msg.name);break;
-    case'chat':if(msg.userId!==MY_ID)addMsg(msg.name,msg.text,false);break;
-    case'reaction':if(msg.userId!==MY_ID)showReactionTile(msg.userId,msg.emoji);break;
-    case'mute-all':if(!S.isHost)applyMute(true);break;
-    case'remove':if(msg.targetId===MY_ID){toast('Removed by host.');setTimeout(endMeeting,1500);}break;
+    case'knock':
+      // Guest is asking to join
+      conn.metadata={userId:msg.userId,name:msg.name};
+      S.guestConns[msg.userId]=conn;
+      showAdmitBar(msg.userId,msg.name);
+      break;
+    case'knock-cancel':
+      if(S.pendingKnocker?.userId===msg.userId)hideAdmitBar();
+      delete S.guestConns[msg.userId];
+      break;
+    case'participant-joined':
+      if(!S.participants[msg.userId]){
+        addPeer(msg.userId,msg.name,msg.color);
+        addSys(`${msg.name} joined`);
+        // Tell all other guests about this new person
+        broadcastToGuests({type:'participant-joined',userId:msg.userId,name:msg.name,color:msg.color},msg.userId);
+        // Tell new guest about everyone already in the room
+        const roster=Object.values(S.participants).map(p=>({userId:p.userId,name:p.name,color:p.color}));
+        roster.push({userId:MY_ID,name:S.name,color:'#6366f1',isHost:true});
+        conn.send({type:'roster',participants:roster});
+      }
+      break;
+    case'chat':
+      addMsg(msg.name,msg.text,false);
+      broadcastToGuests(msg,msg.userId);
+      break;
+    case'reaction':
+      showReactionTile(msg.userId,msg.emoji);
+      broadcastToGuests(msg,msg.userId);
+      break;
     case'status':
       if(S.participants[msg.userId]){
         if(msg.muted!==undefined)S.participants[msg.userId].muted=msg.muted;
         if(msg.camOn!==undefined)S.participants[msg.userId].camOn=msg.camOn;
         if(msg.handRaised!==undefined)S.participants[msg.userId].handRaised=msg.handRaised;
         renderParticipants();updatePeerTile(msg.userId);
-      }break;
+      }
+      broadcastToGuests(msg,msg.userId);
+      break;
+    case'mute-ack':
+      // guest confirmed mute
+      break;
   }
 }
-function showAdmitBar(uid,name){S.pendingKnocker={userId:uid,name};$('admit-av').textContent=name[0].toUpperCase();$('admit-name').textContent=name;$('admit-bar').classList.add('show');}
+
+// HOST sends to all guests except optional skip
+function broadcastToGuests(msg,skipId){
+  Object.entries(S.guestConns).forEach(([uid,conn])=>{
+    if(uid!==skipId&&conn.open)conn.send(msg);
+  });
+}
+// HOST sends to one specific guest
+function sendToGuest(userId,msg){
+  const conn=S.guestConns[userId];
+  if(conn&&conn.open)conn.send(msg);
+}
+
+// GUEST: connects to host
+function connectAsGuest(){
+  if(typeof Peer==='undefined'){
+    toast('⚠️ PeerJS not loaded. Try refreshing.');
+    // Fallback: just let them in without admit (same device only)
+    setTimeout(startMeeting,1500);
+    return;
+  }
+  const guestPeer=new Peer(myPeerId(),{debug:0});
+  S.peer=guestPeer;
+  guestPeer.on('open',()=>{
+    const conn=guestPeer.connect(hostPeerId(),{
+      reliable:true,
+      metadata:{userId:MY_ID,name:S.name}
+    });
+    S.hostConn=conn;
+    conn.on('open',()=>{
+      toast('Connected — waiting to be admitted…');
+      conn.send({type:'knock',userId:MY_ID,name:S.name});
+    });
+    conn.on('data',data=>handleHostMsg(data));
+    conn.on('error',err=>toast('Connection error: '+err.message));
+    conn.on('close',()=>{
+      if($('s-meeting').classList.contains('active'))addSys('Disconnected from host');
+    });
+  });
+  guestPeer.on('error',err=>{
+    if(err.type==='peer-unavailable'){
+      toast('⚠️ Host not found. Make sure the meeting code is correct and host has started.');
+    }else{
+      toast('Connection error: '+err.type);
+    }
+  });
+}
+
+function handleHostMsg(msg){
+  switch(msg.type){
+    case'admitted':
+      toast('✅ You have been admitted!');
+      startMeeting();
+      // Tell host we joined
+      const myColor=COLORS[Math.floor(Math.random()*COLORS.length)];
+      if(S.hostConn&&S.hostConn.open)S.hostConn.send({type:'participant-joined',userId:MY_ID,name:S.name,color:myColor});
+      break;
+    case'rejected':
+      toast('The host declined your request.');
+      setTimeout(goHome,2200);
+      break;
+    case'roster':
+      // Add everyone already in the room
+      (msg.participants||[]).forEach(p=>{
+        if(p.userId!==MY_ID&&!S.participants[p.userId]){
+          S.participants[p.userId]={userId:p.userId,name:p.name,color:p.color,muted:false,camOn:true,handRaised:false};
+        }
+      });
+      renderGrid();renderParticipants();
+      break;
+    case'participant-joined':
+      if(msg.userId!==MY_ID){addPeer(msg.userId,msg.name,msg.color);addSys(`${msg.name} joined`);}
+      break;
+    case'participant-left':
+      if(msg.userId!==MY_ID)removePeer(msg.userId,msg.name);
+      break;
+    case'chat':
+      if(msg.userId!==MY_ID)addMsg(msg.name,msg.text,false);
+      break;
+    case'reaction':
+      if(msg.userId!==MY_ID)showReactionTile(msg.userId,msg.emoji);
+      break;
+    case'status':
+      if(S.participants[msg.userId]){
+        if(msg.muted!==undefined)S.participants[msg.userId].muted=msg.muted;
+        if(msg.camOn!==undefined)S.participants[msg.userId].camOn=msg.camOn;
+        if(msg.handRaised!==undefined)S.participants[msg.userId].handRaised=msg.handRaised;
+        renderParticipants();updatePeerTile(msg.userId);
+      }
+      break;
+    case'mute-all':
+      applyMute(true);
+      break;
+    case'remove':
+      if(msg.targetId===MY_ID){toast('Removed by host.');setTimeout(endMeeting,1500);}
+      break;
+  }
+}
+
+// Unified broadcast: host → all guests; guest → host
+function broadcast(msg){
+  if(S.isHost){
+    broadcastToGuests(msg,MY_ID);
+  }else{
+    if(S.hostConn&&S.hostConn.open)S.hostConn.send(msg);
+  }
+}
+
+function showAdmitBar(uid,name){
+  S.pendingKnocker={userId:uid,name};
+  $('admit-av').textContent=name[0].toUpperCase();
+  $('admit-name').textContent=name;
+  $('admit-bar').classList.add('show');
+}
 function hideAdmitBar(){S.pendingKnocker=null;$('admit-bar').classList.remove('show');}
-function admitKnocker(){if(!S.pendingKnocker)return;broadcast({type:'admitted',targetId:S.pendingKnocker.userId});toast(`✅ ${S.pendingKnocker.name} admitted`);hideAdmitBar();}
-function rejectKnocker(){if(!S.pendingKnocker)return;broadcast({type:'rejected',targetId:S.pendingKnocker.userId});toast('Request denied');hideAdmitBar();}
+function admitKnocker(){
+  if(!S.pendingKnocker)return;
+  sendToGuest(S.pendingKnocker.userId,{type:'admitted',targetId:S.pendingKnocker.userId});
+  toast(`✅ ${S.pendingKnocker.name} admitted`);
+  hideAdmitBar();
+}
+function rejectKnocker(){
+  if(!S.pendingKnocker)return;
+  sendToGuest(S.pendingKnocker.userId,{type:'rejected',targetId:S.pendingKnocker.userId});
+  if(S.guestConns[S.pendingKnocker.userId])S.guestConns[S.pendingKnocker.userId].close();
+  delete S.guestConns[S.pendingKnocker.userId];
+  toast('Request denied');
+  hideAdmitBar();
+}
+
+// ════════════════════════════════════════════
+// PERSISTENT OFF-SCREEN RECORDING VIDEOS
+// Always connected to live streams. Not affected by display/opacity.
+// ════════════════════════════════════════════
+function makeHiddenVid(muted){
+  const v=document.createElement('video');
+  v.autoplay=true;v.playsInline=true;v.muted=muted;
+  // Off-screen but NOT display:none (keeps decoding frames)
+  v.style.cssText='position:fixed;width:1px;height:1px;top:-2px;left:-2px;opacity:0;pointer-events:none;z-index:-1;';
+  document.body.appendChild(v);
+  return v;
+}
+function initCamVid(){
+  if(!S._camVid)S._camVid=makeHiddenVid(true);
+  if(S.stream){S._camVid.srcObject=S.stream;S._camVid.play().catch(()=>{});}
+}
+function initScrVid(){
+  if(!S._scrVid)S._scrVid=makeHiddenVid(false);
+}
+function destroyRecVids(){
+  if(S._camVid){S._camVid.srcObject=null;S._camVid.remove();S._camVid=null;}
+  if(S._scrVid){S._scrVid.srcObject=null;S._scrVid.remove();S._scrVid=null;}
+}
 
 // ════════════════════════════════════════════
 // START MEETING
 // ════════════════════════════════════════════
 function startMeeting(){
   const myColor=COLORS[Math.floor(Math.random()*COLORS.length)];
-  setupChannel();setScreen('s-meeting');
+  setScreen('s-meeting');
   $('m-link').textContent=S.meetingId;$('c-name').textContent=S.name;
+  initCamVid();
+  if(S.isHost){
+    openHostPeer(); // start accepting connections
+  }
   renderGrid();renderParticipants();
   addSys('Meeting started · '+S.meetingId);
-  addSys('Share the meeting code to invite others.');
+  if(S.isHost)addSys('Share the meeting code to invite others.');
   startTimer();
-  broadcast({type:'participant-joined',userId:MY_ID,name:S.name,color:myColor});
 }
 
 // ════════════════════════════════════════════
@@ -913,42 +1133,52 @@ function startBgCanvas(){
   const bgc=$('bgc-self');if(!bgc)return;
 
   bgc.classList.add('on');
-  if(raw){raw.style.opacity='0';}
+  if(raw)raw.style.opacity='0';
   const av=$('av-self');if(av)av.style.display=S.camOn?'none':'flex';
+
+  function drawCover(ctx,src,x,y,w,h,mirror){
+    if(!src||src.readyState<2)return false;
+    const vw=src.videoWidth,vh=src.videoHeight;
+    if(!vw||!vh)return false;
+    // Cover-crop: fill entire canvas area, crop excess (no letterboxing)
+    const ar=vw/vh,cr=w/h;
+    let sx=0,sy=0,sw=vw,sh=vh;
+    if(ar>cr){sw=vh*cr;sx=(vw-sw)/2;}
+    else{sh=vw/cr;sy=(vh-sh)/2;}
+    ctx.save();
+    if(mirror){ctx.translate(x+w,y);ctx.scale(-1,1);ctx.drawImage(src,sx,sy,sw,sh,0,0,w,h);}
+    else{ctx.drawImage(src,sx,sy,sw,sh,x,y,w,h);}
+    ctx.restore();
+    return true;
+  }
 
   function drawFrame(){
     if(!S.camOn||S.currentBg==='none'){S.bgAnim=requestAnimationFrame(drawFrame);return;}
-    const w=tile.clientWidth||640;
-    const h=tile.clientHeight||480;
+    const w=tile.clientWidth||640,h=tile.clientHeight||480;
     if(bgc.width!==w)bgc.width=w;
     if(bgc.height!==h)bgc.height=h;
     const ctx=bgc.getContext('2d');
     ctx.clearRect(0,0,w,h);
 
     if(S.currentBg==='blur'){
-      // Draw blurred background using raw video
+      // Step 1: draw blurred version as background
       if(raw.readyState>=2){
-        ctx.save();ctx.filter='blur(22px)';ctx.scale(-1,1);
-        ctx.drawImage(raw,-w,0,w,h);
+        ctx.save();ctx.filter='blur(24px)';
+        drawCover(ctx,raw,0,0,w,h,true);
         ctx.restore();
-        // Draw sharp video on top
-        ctx.save();ctx.scale(-1,1);
-        ctx.drawImage(raw,-w,0,w,h);
-        ctx.restore();
+        // Step 2: draw sharp video on top (full cover, no shrinking)
+        drawCover(ctx,raw,0,0,w,h,true);
       }
     }else{
-      // Draw CSS background
+      // Step 1: draw the scene background fully
       drawSceneBg(ctx,w,h,S.currentBg);
-      // Draw video contained on top
-      if(raw.readyState>=2){
-        const vr=raw.videoWidth/raw.videoHeight||1.77;
-        const cr=w/h;
-        let dw,dh,dx,dy;
-        if(vr>cr){dw=w;dh=w/vr;dx=0;dy=(h-dh)/2;}
-        else{dh=h;dw=h*vr;dx=(w-dw)/2;dy=0;}
-        ctx.save();ctx.translate(w,0);ctx.scale(-1,1);
-        ctx.drawImage(raw,w-dx-dw,dy,dw,dh);
-        ctx.restore();
+      // Step 2: draw video at full COVER size on top
+      const drew=drawCover(ctx,raw,0,0,w,h,true);
+      // Step 3: themed color tint overlay to blend with scene
+      if(drew){
+        const tints={space:'rgba(10,2,40,0.28)',nature:'rgba(15,60,15,0.18)',office:'rgba(40,40,100,0.14)'};
+        ctx.fillStyle=tints[S.currentBg]||'transparent';
+        ctx.fillRect(0,0,w,h);
       }
     }
     S.bgAnim=requestAnimationFrame(drawFrame);
@@ -1014,7 +1244,7 @@ function applyMute(m,silent){
   if(S.stream)S.stream.getAudioTracks().forEach(t=>t.enabled=!S.muted);
   const btn=$('btn-mic');
   btn.textContent=S.muted?'🔇':'🎙️';
-  btn.querySelector('.cb-label').textContent=S.muted?'Unmute':'Mute';
+  btn.nextElementSibling.textContent=S.muted?'Unmute':'Mute';
   btn.className=`cb ${S.muted?'cb-off':'cb-n'}`;
   selfSyncUI();broadcast({type:'status',userId:MY_ID,muted:S.muted});
   if(!silent)toast(S.muted?'Muted':'Mic on');
@@ -1026,7 +1256,7 @@ function toggleCam(){
   if(S.stream)S.stream.getVideoTracks().forEach(t=>t.enabled=S.camOn);
   const btn=$('btn-cam');
   btn.textContent=S.camOn?'📷':'🚫';
-  btn.querySelector('.cb-label').textContent=S.camOn?'Camera':'Cam Off';
+  btn.nextElementSibling.textContent=S.camOn?'Camera':'Cam Off';
   btn.className=`cb ${S.camOn?'cb-n':'cb-off'}`;
   selfSyncUI();
   if(S.currentBg!=='none'){stopBgCanvas();if(S.camOn)startBgCanvas();}
@@ -1037,29 +1267,51 @@ function toggleCam(){
 async function toggleShare(){
   if(!S.sharing){
     try{
-      // Request screen with audio if available
-      const scrStream=await navigator.mediaDevices.getDisplayMedia({video:{width:{ideal:1920},height:{ideal:1080}},audio:true});
+      const scrStream=await navigator.mediaDevices.getDisplayMedia({
+        video:{width:{ideal:1920},height:{ideal:1080},frameRate:{ideal:30}},audio:true
+      });
       S.shareStream=scrStream;S.sharing=true;
-      const btn=$('btn-share');btn.className='cb cb-a';btn.querySelector('.cb-label').textContent='Stop';
 
-      // Replace self tile raw video with screen
+      // Feed screen into dedicated off-screen video (for recording)
+      initScrVid();
+      S._scrVid.srcObject=scrStream;
+      S._scrVid.play().catch(()=>{});
+
+      const btn=$('btn-share');btn.className='cb cb-a';btn.nextElementSibling.textContent='Stop';
+
+      // Show screen in self tile for live preview
       const tile=$('tile-self');
       const raw=tile?.querySelector('.vid-raw');
-      if(raw){raw.srcObject=scrStream;raw.style.transform='none';} // no mirror for screen
-      const bgc=$('bgc-self');
-      if(bgc)bgc.classList.remove('on');
+      if(raw){
+        raw.srcObject=scrStream;
+        raw.style.transform='none';
+        raw.style.opacity='1';
+        raw.style.display='block';
+        raw.play().catch(()=>{});
+      }
+      const bgc=$('bgc-self');if(bgc)bgc.classList.remove('on');
       stopBgCanvas();
 
-      toast('Screen sharing started — captures in recording');
+      toast('🖥️ Screen sharing — captured in recording');
       scrStream.getVideoTracks()[0].onended=stopShare;
     }catch(e){toast('Screen share cancelled');}
   }else{stopShare();}
 }
+
 function stopShare(){
-  S.sharing=false;S.shareStream=null;
-  const btn=$('btn-share');btn.className='cb cb-n';btn.querySelector('.cb-label').textContent='Share';
-  const tile=$('tile-self');const raw=tile?.querySelector('.vid-raw');
-  if(raw&&S.stream){raw.srcObject=S.stream;raw.style.transform='scaleX(-1)';}
+  S.sharing=false;
+  if(S._scrVid){S._scrVid.srcObject=null;}
+  S.shareStream=null;
+  const btn=$('btn-share');btn.className='cb cb-n';btn.nextElementSibling.textContent='Share';
+  // Restore camera to self tile
+  const tile=$('tile-self');
+  const raw=tile?.querySelector('.vid-raw');
+  if(raw&&S.stream){
+    raw.srcObject=S.stream;
+    raw.style.transform='scaleX(-1)';
+    raw.play().catch(()=>{});
+  }
+  selfSyncUI();
   if(S.currentBg!=='none')startBgCanvas();
   toast('Screen sharing stopped');
 }
@@ -1087,15 +1339,20 @@ function showReactionTile(id,emoji){
 // ════════════════════════════════════════════
 // HOST CONTROLS
 // ════════════════════════════════════════════
-function muteAll(){broadcast({type:'mute-all'});addSys('Host muted all participants');toast('All muted');}
+function muteAll(){
+  broadcastToGuests({type:'mute-all'});
+  addSys('Host muted all participants');toast('All muted');
+}
 function muteParticipant(uid,name){
   if(S.participants[uid])S.participants[uid].muted=true;
-  broadcast({type:'status',userId:uid,muted:true});
+  sendToGuest(uid,{type:'mute-all'});
   renderParticipants();updatePeerTile(uid);toast(`${name} muted`);
 }
 function removeParticipant(uid,name){
   if(!confirm(`Remove ${name}?`))return;
-  broadcast({type:'remove',targetId:uid});
+  sendToGuest(uid,{type:'remove',targetId:uid});
+  if(S.guestConns[uid])S.guestConns[uid].close();
+  delete S.guestConns[uid];
   removePeer(uid,name);toast(`${name} removed`);
 }
 
@@ -1105,112 +1362,162 @@ function removeParticipant(uid,name){
 function toggleRecording(){if(!S.recording)startRecording();else stopRecording();}
 
 function startRecording(){
-  // Create a composite canvas that captures all video tiles
-  const rc=document.createElement('canvas');
-  rc.width=1920;rc.height=1080;
-  const ctx=rc.getContext('2d');
+  // ── Cover-crop: fill w×h exactly, crop excess. No letterbox ever. ──
+  function coverDraw(ctx,vid,x,y,w,h,mirror){
+    if(!vid||vid.readyState<2||!vid.videoWidth)return false;
+    const ar=vid.videoWidth/vid.videoHeight,cr=w/h;
+    let sx=0,sy=0,sw=vid.videoWidth,sh=vid.videoHeight;
+    if(ar>cr){sw=sh*cr;sx=(vid.videoWidth-sw)/2;}
+    else{sh=sw/cr;sy=(vid.videoHeight-sh)/2;}
+    ctx.save();
+    if(mirror){ctx.translate(x+w,y);ctx.scale(-1,1);ctx.drawImage(vid,sx,sy,sw,sh,0,0,w,h);}
+    else{ctx.drawImage(vid,sx,sy,sw,sh,x,y,w,h);}
+    ctx.restore();
+    return true;
+  }
+  function avatarDraw(ctx,label,color,x,y,w,h){
+    ctx.fillStyle=color||'#6366f1';
+    const r=Math.min(w,h)*0.17;
+    ctx.beginPath();ctx.arc(x+w/2,y+h/2,r,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#fff';ctx.font=`bold ${Math.round(r*0.88)}px sans-serif`;
+    ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText((label||'?')[0].toUpperCase(),x+w/2,y+h/2);
+  }
+  function nameDraw(ctx,txt,x,y,w,h){
+    ctx.fillStyle='rgba(0,0,0,0.62)';ctx.fillRect(x,y+h-50,w,50);
+    ctx.fillStyle='#fff';ctx.font='bold 24px sans-serif';
+    ctx.textAlign='left';ctx.textBaseline='middle';
+    ctx.fillText(txt||'',x+12,y+h-25);
+  }
+
+  const RW=1920,RH=1080;
+  const rc=document.createElement('canvas');rc.width=RW;rc.height=RH;
+  const ctx=rc.getContext('2d',{alpha:false});
   S.recCanvas=rc;S.recCtx=ctx;
 
-  // Audio context to mix mic + screen audio
-  let audioDestination=null;
+  // ── Mixed audio ──
+  let audioDest=null;
   try{
-    const aCtx=new AudioContext();S.recAudioCtx=aCtx;
-    const dest=aCtx.createMediaStreamDestination();audioDestination=dest;
-    // Add mic audio
-    if(S.stream&&S.stream.getAudioTracks().length>0){
-      const micSrc=aCtx.createMediaStreamSource(S.stream);
-      micSrc.connect(dest);
+    const aC=new AudioContext({sampleRate:48000});S.recAudioCtx=aC;
+    audioDest=aC.createMediaStreamDestination();
+    if(S.stream&&S.stream.getAudioTracks().length){
+      aC.createMediaStreamSource(S.stream).connect(audioDest);
     }
-    // Add screen audio if available
-    if(S.shareStream&&S.shareStream.getAudioTracks().length>0){
-      const scrSrc=aCtx.createMediaStreamSource(S.shareStream);
-      scrSrc.connect(dest);
+    if(S.shareStream&&S.shareStream.getAudioTracks().length){
+      aC.createMediaStreamSource(S.shareStream).connect(audioDest);
     }
   }catch(e){}
 
-  // Draw loop
-  function drawRec(){
-    ctx.fillStyle='#080d1a';ctx.fillRect(0,0,1920,1080);
-    const tiles=[...$('video-grid').querySelectorAll('.vt')];
-    const n=tiles.length;
-    const cols=n<=1?1:n<=4?2:3;
-    const rows=Math.ceil(n/cols);
-    const tw=1920/cols,th=1080/rows,pad=5;
+  // ── Main draw loop ──
+  // Uses S._camVid (always = camera) and S._scrVid (always = screen when sharing)
+  // These are off-screen video elements that ALWAYS play regardless of DOM opacity/display
+  function drawFrame(){
+    ctx.fillStyle='#080d1a';ctx.fillRect(0,0,RW,RH);
+    const PAD=6;
 
-    tiles.forEach((tile,idx)=>{
-      const col=idx%cols,row=Math.floor(idx/cols);
-      const x=col*tw+pad,y=row*th+pad,w=tw-pad*2,h=th-pad*2;
-      ctx.save();
-      ctx.roundRect(x,y,w,h,10);ctx.clip();
-      ctx.fillStyle='#06080f';ctx.fillRect(x,y,w,h);
+    if(S.sharing){
+      // SPOTLIGHT: screen on left 70%, camera PIP on right
+      const scrW=Math.round(RW*0.70);
+      const camW=RW-scrW-PAD*3, camH=Math.round(camW/1.7778);
+      const camX=scrW+PAD*2, camY=Math.round((RH-camH)/2);
 
-      // Check if bg canvas is active for this tile
-      const bgc=tile.querySelector('.bg-canvas');
-      const raw=tile.querySelector('.vid-raw');
-      const isSelf=tile.id==='tile-self';
-
-      if(bgc&&bgc.classList.contains('on')&&bgc.width>0){
-        // Draw canvas background
-        ctx.drawImage(bgc,x,y,w,h);
-      }else if(raw&&raw.readyState>=2&&raw.srcObject&&raw.srcObject.getVideoTracks&&raw.srcObject.getVideoTracks().length>0){
-        const shouldMirror=isSelf&&!S.sharing;
-        if(shouldMirror){ctx.translate(x+w,y);ctx.scale(-1,1);ctx.drawImage(raw,0,0,w,h);}
-        else{ctx.drawImage(raw,x,y,w,h);}
-      }else{
-        // Draw avatar
-        const av=tile.querySelector('.av-circle');
-        if(av){
-          ctx.fillStyle=av.style.background||'#6366f1';
-          ctx.beginPath();ctx.arc(x+w/2,y+h/2,Math.min(w,h)*0.18,0,Math.PI*2);ctx.fill();
-          ctx.fillStyle='#fff';ctx.font=`bold ${Math.min(w,h)*0.14}px Outfit,sans-serif`;
-          ctx.textAlign='center';ctx.textBaseline='middle';
-          ctx.fillText(av.textContent||'?',x+w/2,y+h/2);
-        }
+      // Screen area (left)
+      ctx.fillStyle='#04060e';ctx.fillRect(0,0,scrW,RH);
+      // Try S._scrVid first (dedicated, always playing), fallback to tile vid-raw
+      const scrDrew = coverDraw(ctx,S._scrVid,0,0,scrW,RH,false);
+      if(!scrDrew){
+        const raw=$('tile-self')?.querySelector('.vid-raw');
+        coverDraw(ctx,raw,0,0,scrW,RH,false);
       }
-      // Name bar
-      ctx.fillStyle='rgba(0,0,0,0.55)';ctx.fillRect(x,y+h-32,w,32);
-      ctx.fillStyle='#fff';ctx.font='bold 15px Outfit,sans-serif';ctx.textAlign='left';ctx.textBaseline='middle';
-      const nameEl=tile.querySelector('.vt-name');
-      ctx.fillText(nameEl?.textContent?.trim()||'',x+10,y+h-16);
-      ctx.restore();
-    });
+      // Screen label
+      ctx.fillStyle='rgba(0,0,0,0.58)';ctx.fillRect(0,RH-54,scrW,54);
+      ctx.fillStyle='rgba(99,102,241,0.9)';ctx.fillRect(0,RH-54,5,54);
+      ctx.fillStyle='#fff';ctx.font='bold 24px sans-serif';
+      ctx.textAlign='left';ctx.textBaseline='middle';
+      ctx.fillText('Screen Share — '+S.name,14,RH-27);
+
+      // Camera PIP (right)
+      ctx.fillStyle='#0d1424';ctx.fillRect(camX-PAD,0,camW+PAD*2,RH);
+      ctx.strokeStyle='rgba(99,102,241,0.6)';ctx.lineWidth=2;
+      ctx.strokeRect(camX,camY,camW,camH);
+      // S._camVid = always camera stream, never replaced by screen
+      const camDrew=coverDraw(ctx,S._camVid,camX,camY,camW,camH,true);
+      if(!camDrew)avatarDraw(ctx,S.name,'#6366f1',camX,camY,camW,camH);
+      nameDraw(ctx,S.name+' (You)',camX,camY,camW,camH);
+
+      // Divider
+      ctx.fillStyle='rgba(99,102,241,0.4)';ctx.fillRect(scrW,0,2,RH);
+
+    }else{
+      // GRID: show all participants
+      const peers=Object.values(S.participants);
+      const tiles=[{id:'self',name:S.name,color:'#6366f1',isSelf:true},...peers.map(p=>({id:p.userId,name:p.name,color:p.color,isSelf:false}))];
+      const n=tiles.length;
+      const cols=n<=1?1:n<=4?2:3;
+      const rows=Math.ceil(n/cols);
+      const tw=Math.floor(RW/cols),th=Math.floor(RH/rows);
+
+      tiles.forEach((t,idx)=>{
+        const col=idx%cols,row=Math.floor(idx/cols);
+        const x=col*tw+PAD,y=row*th+PAD,w=tw-PAD*2,h=th-PAD*2;
+        ctx.save();
+        ctx.beginPath();ctx.rect(x,y,w,h);ctx.clip();
+        ctx.fillStyle='#06080f';ctx.fillRect(x,y,w,h);
+
+        if(t.isSelf){
+          // Self: use S._camVid — always camera, always playing, never affected by screen share
+          const bgc=$('bgc-self');
+          if(bgc&&bgc.classList.contains('on')&&bgc.width>0){
+            ctx.drawImage(bgc,x,y,w,h); // virtual background canvas
+          }else{
+            const drew=coverDraw(ctx,S._camVid,x,y,w,h,true);
+            if(!drew)avatarDraw(ctx,S.name,'#6366f1',x,y,w,h);
+          }
+        }else{
+          // Peer tiles
+          const pTile=$(`tile-${t.id}`);
+          const raw=pTile?.querySelector('.vid-raw');
+          const drew=coverDraw(ctx,raw,x,y,w,h,false);
+          if(!drew)avatarDraw(ctx,t.name,t.color,x,y,w,h);
+        }
+        nameDraw(ctx,t.name+(t.isSelf?' (You)':''),x,y,w,h);
+        ctx.restore();
+      });
+    }
 
     // Watermark
-    ctx.fillStyle='rgba(255,255,255,0.18)';ctx.font='bold 14px Outfit,sans-serif';ctx.textAlign='right';ctx.textBaseline='bottom';
-    ctx.fillText('KreyaConnect · '+S.meetingId,1910,1072);
-
-    S.recAnim=requestAnimationFrame(drawRec);
+    ctx.fillStyle='rgba(255,255,255,0.14)';ctx.font='bold 18px sans-serif';
+    ctx.textAlign='right';ctx.textBaseline='bottom';
+    ctx.fillText('KreyaConnect · '+S.meetingId,RW-14,RH-14);
+    S.recAnim=requestAnimationFrame(drawFrame);
   }
-  drawRec();
+  drawFrame();
 
-  // Build recording stream
+  // ── Stream assembly ──
   const canvasStream=rc.captureStream(30);
-  if(audioDestination){
-    audioDestination.stream.getAudioTracks().forEach(t=>canvasStream.addTrack(t));
-  }else if(S.stream){
-    S.stream.getAudioTracks().forEach(t=>canvasStream.addTrack(t.clone()));
-  }
+  if(audioDest)audioDest.stream.getAudioTracks().forEach(t=>canvasStream.addTrack(t));
+  else if(S.stream)S.stream.getAudioTracks().forEach(t=>canvasStream.addTrack(t.clone()));
 
-  // Pick best codec
   const mimes=['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm','video/mp4'];
   let mime='video/webm';for(const m of mimes){if(MediaRecorder.isTypeSupported(m)){mime=m;break;}}
 
   try{
     S.recChunks=[];
-    S.mediaRecorder=new MediaRecorder(canvasStream,{mimeType:mime,videoBitsPerSecond:8000000});
+    S.mediaRecorder=new MediaRecorder(canvasStream,{mimeType:mime,videoBitsPerSecond:10000000});
     S.mediaRecorder.ondataavailable=e=>{if(e.data.size>0)S.recChunks.push(e.data);};
     S.mediaRecorder.onstop=saveRecording;
-    S.mediaRecorder.start(1000);
+    S.mediaRecorder.start(500);
     S.recording=true;
-    $('btn-rec').className='cb cb-rec on';$('btn-rec').querySelector('.cb-label').textContent='Stop Rec';
-    $('m-rec-ind').classList.add('on');
-    $('rec-badge').classList.add('show');
-    toast('⏺️ Recording full meeting view…');
+    $('btn-rec').className='cb cb-rec on';
+    const rl=$('rec-label');if(rl)rl.textContent='Stop Rec';
+    $('m-rec-ind').classList.add('on');$('rec-badge').classList.add('show');
+    toast('⏺️ Recording started — full meeting layout captured');
     addSys('Recording started');
   }catch(e){
     cancelAnimationFrame(S.recAnim);
     toast('Recording error: '+e.message);
   }
+
 }
 
 function stopRecording(){
@@ -1218,7 +1525,8 @@ function stopRecording(){
   if(S.recAnim){cancelAnimationFrame(S.recAnim);S.recAnim=null;}
   if(S.recAudioCtx){S.recAudioCtx.close().catch(()=>{});S.recAudioCtx=null;}
   S.recording=false;S.recCanvas=null;S.recCtx=null;
-  $('btn-rec').className='cb cb-rec';$('btn-rec').querySelector('.cb-label').textContent='Record';
+  $('btn-rec').className='cb cb-rec';
+  const rl=$('rec-label');if(rl)rl.textContent='Record';
   $('m-rec-ind').classList.remove('on');$('rec-badge').classList.remove('show');
   toast('Saving recording to your device…');
 }
@@ -1473,8 +1781,8 @@ function startTimer(){
 function endMeeting(){
   if(S.recording)stopRecording();
   broadcast({type:'participant-left',userId:MY_ID,name:S.name});
-  stopAll();closeModal('end-overlay');goHome();
-  toast('Meeting ended. Thanks for using KreyaConnect!');
+  closeModal('end-overlay');
+  setTimeout(()=>{stopAll();goHome();toast('Meeting ended. Thanks for using KreyaConnect!');},350);
 }
 function stopAll(){
   stopTranscript();stopBgCanvas();
@@ -1484,7 +1792,12 @@ function stopAll(){
   if(S.stream){S.stream.getTracks().forEach(t=>t.stop());S.stream=null;}
   if(S.pjStream){S.pjStream.getTracks().forEach(t=>t.stop());S.pjStream=null;}
   if(S.shareStream){S.shareStream.getTracks().forEach(t=>t.stop());S.shareStream=null;}
-  if(S.channel){S.channel.close();S.channel=null;}
+  // Close all PeerJS connections
+  Object.values(S.guestConns).forEach(c=>{try{c.close();}catch(e){}});
+  S.guestConns={};
+  if(S.hostConn){try{S.hostConn.close();}catch(e){}}S.hostConn=null;
+  if(S.peer){try{S.peer.destroy();}catch(e){}}S.peer=null;
+  destroyRecVids();
   S.participants={};S.isHost=false;S.transcript=[];
   S.recording=false;S.sharing=false;S.handRaised=false;S.currentBg='none';
 }
