@@ -740,21 +740,16 @@ async function enterMeeting(noCam){
   const n=($('meet-name').value||'').trim();if(n)S.name=n;
   if(noCam&&S.pjStream)S.pjStream.getVideoTracks().forEach(t=>t.enabled=false);
   S.muted=S.pjMuted;S.camOn=noCam?false:S.pjCamOn;S.stream=S.pjStream;
-  if(S.isHost)startMeeting();else goLobby();
+  startMeeting();
 }
 
 // ════════════════════════════════════════════
 // LOBBY
 // ════════════════════════════════════════════
 function goLobby(){
-  setScreen('s-lobby');
-  $('lobby-id').textContent=S.meetingId;
-  $('lobby-av').textContent=S.name[0].toUpperCase();
-  setupChannel();
-  broadcast({type:'knock',userId:MY_ID,name:S.name});
-  toast('Waiting for host to admit you…');
+  // Lobby removed - all users join directly
 }
-function leaveLobby(){broadcast({type:'knock-cancel',userId:MY_ID});stopAll();goHome();}
+function leaveLobby(){stopAll();goHome();}
 
 // ════════════════════════════════════════════
 // BROADCAST CHANNEL
@@ -767,10 +762,10 @@ function setupChannel(){
 function broadcast(msg){if(S.channel)S.channel.postMessage(msg);}
 function handleMsg(msg){
   switch(msg.type){
-    case'knock':if(S.isHost&&$('s-meeting').classList.contains('active'))showAdmitBar(msg.userId,msg.name);break;
-    case'knock-cancel':if(S.pendingKnocker?.userId===msg.userId)hideAdmitBar();break;
-    case'admitted':if(msg.targetId===MY_ID){toast('✅ Admitted!');startMeeting();}break;
-    case'rejected':if(msg.targetId===MY_ID){toast('Host declined your request.');setTimeout(goHome,2200);}break;
+    case'knock':break;
+    case'knock-cancel':break;
+    case'admitted':break;
+    case'rejected':break;
     case'participant-joined':if(msg.userId!==MY_ID){addPeer(msg.userId,msg.name,msg.color);addSys(`${msg.name} joined`);}break;
     case'participant-left':if(msg.userId!==MY_ID)removePeer(msg.userId,msg.name);break;
     case'chat':if(msg.userId!==MY_ID)addMsg(msg.name,msg.text,false);break;
