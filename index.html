@@ -740,6 +740,7 @@ async function enterMeeting(noCam){
   const n=($('meet-name').value||'').trim();if(n)S.name=n;
   if(noCam&&S.pjStream)S.pjStream.getVideoTracks().forEach(t=>t.enabled=false);
   S.muted=S.pjMuted;S.camOn=noCam?false:S.pjCamOn;S.stream=S.pjStream;
+  // Directly start meeting without lobby
   startMeeting();
 }
 
@@ -747,7 +748,8 @@ async function enterMeeting(noCam){
 // LOBBY
 // ════════════════════════════════════════════
 function goLobby(){
-  // Lobby removed - all users join directly
+  // Bypassed - all users join directly to meeting
+  startMeeting();
 }
 function leaveLobby(){stopAll();goHome();}
 
