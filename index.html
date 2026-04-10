@@ -320,7 +320,6 @@ footer{text-align:center;padding:18px;color:var(--text3);font-size:12px;border-t
         <span class="g-name" id="g-name"></span>
       </div>
       <button class="btn btn-ghost btn-sm" id="g-signin-nav" onclick="showGoogleSignin()">🔗 Sign In</button>
-      <button class="btn btn-ghost btn-sm" onclick="showAIKeyModal()">⚡ AI Settings</button>
     </div>
   </nav>
   <div class="hero">
@@ -339,7 +338,7 @@ footer{text-align:center;padding:18px;color:var(--text3);font-size:12px;border-t
       <div class="divider">or join existing</div>
       <div class="join-row" id="join-sec">
         <input class="input" id="join-code" placeholder="Meeting code (kreya-xxx-xxx)" autocomplete="off">
-        <button class="btn btn-ghost" onclick="joinMeeting()">Join</button>
+        <button class="btn btn-ghost" id="join-btn" onclick="joinMeeting()">Join</button>
       </div>
     </div>
     <div class="features">
@@ -351,7 +350,7 @@ footer{text-align:center;padding:18px;color:var(--text3);font-size:12px;border-t
       <div class="feat"><div class="feat-ic">📄</div><h4>PDF Transcript</h4><p>Export full meeting transcript as a professional PDF.</p></div>
     </div>
   </div>
-  <footer>© 2025 KreyaConnect — The Next-Gen AI Meeting Platform</footer>
+  <footer>© 2020 KreyaConnect — The Next-Gen AI Meeting Platform &nbsp;·&nbsp; Made with ❤️ by <strong style="color:var(--accent)">Kritin Baranwal</strong></footer>
 </div>
 
 <!-- ═══ LOBBY ═══ -->
@@ -470,6 +469,10 @@ footer{text-align:center;padding:18px;color:var(--text3);font-size:12px;border-t
     <div class="pcontent" id="pc-ai">
       <div class="ai-inner">
         <div class="rec-badge" id="rec-badge">⏺️ Recording in progress…</div>
+        <div id="ai-key-row" style="display:flex;gap:6px;align-items:center;background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:7px 9px;margin-bottom:4px;">
+          <input type="password" id="ai-key-inline" placeholder="AI key…" style="flex:1;background:none;border:none;color:var(--text);font-size:10px;outline:none;" autocomplete="off">
+          <button onclick="const k=($('ai-key-inline').value||'').trim();if(k){localStorage.setItem('kc_aikey',k);$('ai-key-row').style.display='none';toast('✅ Key saved');}" style="background:var(--accent);color:#fff;border:none;border-radius:4px;padding:3px 8px;font-size:9px;cursor:pointer;">Save</button>
+        </div>
         <div>
           <div class="ts-hdr"><div class="ai-sec">Live Transcript</div><div class="ts-status off" id="ts-st">⬤ Off</div></div>
           <div class="tbox" id="tbox"><span style="color:var(--text3);">Click 📝 to start transcription…</span></div>
@@ -534,19 +537,6 @@ footer{text-align:center;padding:18px;color:var(--text3);font-size:12px;border-t
     <div class="modal-btns"><button class="btn btn-primary" onclick="closeModal('bg-overlay')">Apply</button></div>
   </div>
 </div>
-
-<div class="overlay" id="aikey-overlay">
-  <div class="modal">
-    <h3>⚡ AI Assistant Settings</h3>
-    <p class="sub">Enter your key to unlock all 12 AI content generation features. Stored only in this session.</p>
-    <div class="info-box">Your key is used directly in your browser and is never stored or shared anywhere outside this page.</div>
-    <label>Key</label>
-    <input class="input" id="aikey-inp" type="password" placeholder="sk-ant-api03-…" style="margin-bottom:8px;">
-    <div class="modal-btns">
-      <button class="btn btn-ghost" onclick="closeModal('aikey-overlay')">Cancel</button>
-      <button class="btn btn-primary" onclick="saveAIKey()">Save</button>
-    </div>
-  </div>
 </div>
 
 <div class="overlay" id="google-overlay">
@@ -623,13 +613,12 @@ const S={
   shareStream:null,
   timerSec:0,timerInt:null,
   transcript:[],transcribing:false,recognition:null,
-  apiKey:'',
-  participants:{},       // {userId: {name,color,muted,camOn,handRaised,conn}}
+  participants:{},
   pendingKnocker:null,
-  peer:null,             // PeerJS instance
-  hostConn:null,         // joiner's DataConnection to host
-  guestConns:{},         // host's DataConnections to each guest
-  channel:null,          // kept for same-device fallback
+  peer:null,
+  hostConn:null,
+  guestConns:{},
+  mediaCalls:{},         // MediaConnections per peerId
   recording:false,mediaRecorder:null,recChunks:[],
   recCanvas:null,recCtx:null,recAnim:null,recAudioCtx:null,
   bgAnim:null,
@@ -686,8 +675,8 @@ function handleGoogleCredential(response){
     toast(`✅ Signed in as ${payload.name}`);
   }catch(e){toast('Sign-in failed: '+e.message);}
 }
-function showAIKeyModal(){showModal('aikey-overlay');if(S.apiKey)$('aikey-inp').value=S.apiKey;}
-function saveAIKey(){S.apiKey=($('aikey-inp').value||'').trim();closeModal('aikey-overlay');toast(S.apiKey?'⚡ AI key saved!':'Key cleared');}
+function getAIKey(){return(localStorage.getItem('kc_aikey')||'');}
+function saveAIKey(){const k=($('aikey-inp').value||'').trim();localStorage.setItem('kc_aikey',k);closeModal('aikey-overlay');toast(k?'Key saved!':'Key cleared');}
 
 // ════════════════════════════════════════════
 // CREATE / JOIN
@@ -781,19 +770,18 @@ function openHostPeer(){
   S.peer=new Peer(hostPeerId(),{debug:0});
   S.peer.on('open',()=>{toast('Meeting ready — share the code!');});
   S.peer.on('error',err=>{
-    if(err.type==='unavailable-id'){
-      // Host ID already taken — just open with random ID and still work
-      S.peer=new Peer(myPeerId(),{debug:0});
-      setupHostListeners();
-    }
+    // If ID taken (meeting already open in another tab), use random ID
+    S.peer=new Peer(myPeerId()+'h',{debug:0});
+    S.peer.on('open',()=>setupHostListeners());
+    S.peer.on('error',()=>{});
   });
   setupHostListeners();
 }
 
 function setupHostListeners(){
   if(!S.peer)return;
+  // Data channel: signaling (knock, chat, status)
   S.peer.on('connection',conn=>{
-    // A guest is knocking
     conn.on('open',()=>{
       conn.on('data',data=>{handleGuestMsg(conn,data);});
       conn.on('close',()=>{
@@ -802,6 +790,17 @@ function setupHostListeners(){
         delete S.guestConns[conn.metadata?.userId||conn.peer];
       });
     });
+  });
+  // Media channel: answer incoming calls from guests (guest's cam/mic)
+  S.peer.on('call',call=>{
+    call.answer(S.stream||new MediaStream()); // answer with our stream
+    call.on('stream',remoteStream=>{
+      // Derive userId from peerId: 'kuser-{userId}'
+      const uid=call.peer.replace('kuser-','');
+      displayPeerStream(uid,remoteStream);
+    });
+    call.on('error',e=>console.warn('Media call error',e));
+    S.mediaCalls[call.peer]=call;
   });
 }
 
@@ -847,7 +846,12 @@ function handleGuestMsg(conn,msg){
       broadcastToGuests(msg,msg.userId);
       break;
     case'mute-ack':
-      // guest confirmed mute
+      break;
+    case'transcript':
+      broadcastToGuests(msg,msg.userId);
+      break;
+    case'rec-status':
+      broadcastToGuests(msg,'');
       break;
   }
 }
@@ -875,6 +879,7 @@ function connectAsGuest(){
   const guestPeer=new Peer(myPeerId(),{debug:0});
   S.peer=guestPeer;
   guestPeer.on('open',()=>{
+    // Data connection for signaling
     const conn=guestPeer.connect(hostPeerId(),{
       reliable:true,
       metadata:{userId:MY_ID,name:S.name}
@@ -890,6 +895,21 @@ function connectAsGuest(){
       if($('s-meeting').classList.contains('active'))addSys('Disconnected from host');
     });
   });
+  // Answer media calls from host (host calls us after admit)
+  guestPeer.on('call',call=>{
+    call.answer(S.stream||new MediaStream());
+    call.on('stream',remoteStream=>{
+      const uid=call.peer.replace('kuser-','').replace('h','');
+      // Host stream: show in a host tile if not already there
+      if(!S.participants['host-stream']){
+        S.participants['host-stream']={userId:'host-stream',name:'Host',color:'#6366f1',muted:false,camOn:true,handRaised:false};
+        renderGrid();renderParticipants();
+      }
+      displayPeerStream('host-stream',remoteStream);
+    });
+    call.on('error',e=>console.warn('call error',e));
+    S.mediaCalls[call.peer]=call;
+  });
   guestPeer.on('error',err=>{
     if(err.type==='peer-unavailable'){
       toast('⚠️ Host not found. Make sure the meeting code is correct and host has started.');
@@ -904,9 +924,26 @@ function handleHostMsg(msg){
     case'admitted':
       toast('✅ You have been admitted!');
       startMeeting();
-      // Tell host we joined
+      // Tell host we joined via data channel
       const myColor=COLORS[Math.floor(Math.random()*COLORS.length)];
       if(S.hostConn&&S.hostConn.open)S.hostConn.send({type:'participant-joined',userId:MY_ID,name:S.name,color:myColor});
+      // Call host with our stream so they can hear/see us
+      if(S.peer&&S.stream){
+        setTimeout(()=>{
+          try{
+            const call=S.peer.call(hostPeerId(),S.stream);
+            call.on('stream',remoteStream=>{
+              if(!S.participants['host']){
+                S.participants['host']={userId:'host',name:'Host',color:'#6366f1',muted:false,camOn:true,handRaised:false};
+                renderGrid();renderParticipants();
+              }
+              displayPeerStream('host',remoteStream);
+            });
+            call.on('error',e=>console.warn('guest->host call error',e));
+            S.mediaCalls[hostPeerId()]=call;
+          }catch(e){console.warn('guest call failed',e);}
+        },400);
+      }
       break;
     case'rejected':
       toast('The host declined your request.');
@@ -947,6 +984,17 @@ function handleHostMsg(msg){
     case'remove':
       if(msg.targetId===MY_ID){toast('Removed by host.');setTimeout(endMeeting,1500);}
       break;
+    case'transcript':
+      if(S.transcribing){
+        const tbox=$('tbox');if(tbox){const p=document.createElement('p');p.style.marginBottom='3px';
+        p.innerHTML=`<strong style="color:var(--text)">${esc(msg.speaker||'?')}:</strong> ${esc(msg.text||'')}`;tbox.appendChild(p);tbox.scrollTop=tbox.scrollHeight;}
+        S.transcript.push({t:new Date(),speaker:msg.speaker,text:msg.text});
+      }
+      break;
+    case'rec-status':
+      $('m-rec-ind')?.classList[msg.on?'add':'remove']('on');
+      $('rec-badge')?.classList[msg.on?'add':'remove']('show');
+      break;
   }
 }
 
@@ -968,9 +1016,29 @@ function showAdmitBar(uid,name){
 function hideAdmitBar(){S.pendingKnocker=null;$('admit-bar').classList.remove('show');}
 function admitKnocker(){
   if(!S.pendingKnocker)return;
-  sendToGuest(S.pendingKnocker.userId,{type:'admitted',targetId:S.pendingKnocker.userId});
-  toast(`✅ ${S.pendingKnocker.name} admitted`);
+  const uid=S.pendingKnocker.userId;
+  const name=S.pendingKnocker.name;
+  sendToGuest(uid,{type:'admitted',targetId:uid});
+  toast(`✅ ${name} admitted`);
   hideAdmitBar();
+  // Call guest with our video/audio stream
+  if(S.peer&&S.stream){
+    const guestPid='kuser-'+uid;
+    setTimeout(()=>{
+      try{
+        const call=S.peer.call(guestPid,S.stream);
+        call.on('stream',remoteStream=>{
+          if(!S.participants[uid]){
+            S.participants[uid]={userId:uid,name,color:COLORS[Object.keys(S.participants).length%COLORS.length],muted:false,camOn:true,handRaised:false};
+            renderGrid();renderParticipants();
+          }
+          displayPeerStream(uid,remoteStream);
+        });
+        call.on('error',e=>console.warn('host call error',e));
+        S.mediaCalls[guestPid]=call;
+      }catch(e){console.warn('call failed',e);}
+    },800); // small delay to let guest's peer be ready
+  }
 }
 function rejectKnocker(){
   if(!S.pendingKnocker)return;
@@ -1104,6 +1172,29 @@ function addPeer(uid,name,color){
   S.participants[uid]={userId:uid,name,color,muted:false,camOn:true,handRaised:false};
   renderGrid();renderParticipants();
 }
+
+// Attach a remote media stream to a participant tile
+function displayPeerStream(uid,remoteStream){
+  // Wait for tile to exist in DOM (may be created by addPeer/renderGrid)
+  const attach=()=>{
+    const tile=$(`tile-${uid}`);
+    if(!tile){setTimeout(attach,200);return;}
+    const raw=tile.querySelector('.vid-raw');
+    if(raw){
+      raw.srcObject=remoteStream;
+      raw.style.opacity='1';
+      raw.style.display='block';
+      raw.style.transform='none'; // no mirror for remote video
+      raw.play().catch(()=>{});
+    }
+    // Show video, hide avatar
+    const av=$(`av-${uid}`);if(av)av.style.display='none';
+    // Update participant status
+    if(S.participants[uid])S.participants[uid].camOn=true;
+    renderParticipants();
+  };
+  attach();
+}
 function removePeer(uid,name){
   const n=S.participants[uid]?.name||name||'A participant';
   delete S.participants[uid];
@@ -1129,22 +1220,18 @@ function setBg(bg){
 
 function startBgCanvas(){
   const tile=$('tile-self');if(!tile)return;
-  const raw=tile.querySelector('.vid-raw');if(!raw)return;
   const bgc=$('bgc-self');if(!bgc)return;
-
   bgc.classList.add('on');
-  if(raw)raw.style.opacity='0';
+  const raw=tile.querySelector('.vid-raw');
+  if(raw){raw.style.opacity='0';}
   const av=$('av-self');if(av)av.style.display=S.camOn?'none':'flex';
 
-  function drawCover(ctx,src,x,y,w,h,mirror){
-    if(!src||src.readyState<2)return false;
-    const vw=src.videoWidth,vh=src.videoHeight;
-    if(!vw||!vh)return false;
-    // Cover-crop: fill entire canvas area, crop excess (no letterboxing)
-    const ar=vw/vh,cr=w/h;
-    let sx=0,sy=0,sw=vw,sh=vh;
-    if(ar>cr){sw=vh*cr;sx=(vw-sw)/2;}
-    else{sh=vw/cr;sy=(vh-sh)/2;}
+  function coverDraw(ctx,src,x,y,w,h,mirror){
+    if(!src||!src.videoWidth||!src.videoHeight)return false;
+    const ar=src.videoWidth/src.videoHeight,cr=w/h;
+    let sx=0,sy=0,sw=src.videoWidth,sh=src.videoHeight;
+    if(ar>cr){sw=sh*cr;sx=(src.videoWidth-sw)/2;}
+    else{sh=sw/cr;sy=(src.videoHeight-sh)/2;}
     ctx.save();
     if(mirror){ctx.translate(x+w,y);ctx.scale(-1,1);ctx.drawImage(src,sx,sy,sw,sh,0,0,w,h);}
     else{ctx.drawImage(src,sx,sy,sw,sh,x,y,w,h);}
@@ -1154,38 +1241,25 @@ function startBgCanvas(){
 
   function drawFrame(){
     if(!S.camOn||S.currentBg==='none'){S.bgAnim=requestAnimationFrame(drawFrame);return;}
-    const w=tile.clientWidth||640,h=tile.clientHeight||480;
+    const w=tile.clientWidth||640,h2=tile.clientHeight||480;
     if(bgc.width!==w)bgc.width=w;
-    if(bgc.height!==h)bgc.height=h;
+    if(bgc.height!==h2)bgc.height=h2;
     const ctx=bgc.getContext('2d');
-    ctx.clearRect(0,0,w,h);
-
+    // Use S._camVid — always playing off-screen, never display:none
+    const src=S._camVid;
     if(S.currentBg==='blur'){
-      // Step 1: draw blurred version as background
-      if(raw.readyState>=2){
-        ctx.save();ctx.filter='blur(24px)';
-        drawCover(ctx,raw,0,0,w,h,true);
-        ctx.restore();
-        // Step 2: draw sharp video on top (full cover, no shrinking)
-        drawCover(ctx,raw,0,0,w,h,true);
+      if(src&&src.videoWidth){
+        ctx.save();ctx.filter='blur(22px)';coverDraw(ctx,src,0,0,w,h2,true);ctx.restore();
+        coverDraw(ctx,src,0,0,w,h2,true);
       }
     }else{
-      // Step 1: draw the scene background fully
-      drawSceneBg(ctx,w,h,S.currentBg);
-      // Step 2: draw video at full COVER size on top
-      const drew=drawCover(ctx,raw,0,0,w,h,true);
-      // Step 3: themed color tint overlay to blend with scene
-      if(drew){
-        const tints={space:'rgba(10,2,40,0.28)',nature:'rgba(15,60,15,0.18)',office:'rgba(40,40,100,0.14)'};
-        ctx.fillStyle=tints[S.currentBg]||'transparent';
-        ctx.fillRect(0,0,w,h);
-      }
+      drawSceneBg(ctx,w,h2,S.currentBg);
+      coverDraw(ctx,src,0,0,w,h2,true);
     }
     S.bgAnim=requestAnimationFrame(drawFrame);
   }
   drawFrame();
 }
-
 function stopBgCanvas(){
   if(S.bgAnim){cancelAnimationFrame(S.bgAnim);S.bgAnim=null;}
   const bgc=$('bgc-self');if(bgc)bgc.classList.remove('on');
@@ -1251,9 +1325,37 @@ function applyMute(m,silent){
 }
 function toggleMic(){applyMute(!S.muted);}
 
-function toggleCam(){
+async function toggleCam(){
   S.camOn=!S.camOn;
-  if(S.stream)S.stream.getVideoTracks().forEach(t=>t.enabled=S.camOn);
+  if(S.camOn){
+    // Try to re-enable existing track first
+    const tracks=S.stream?S.stream.getVideoTracks():[];
+    const alive=tracks.find(t=>t.readyState!=='ended');
+    if(alive){
+      alive.enabled=true;
+    }else{
+      // Track was stopped (device released) — re-request camera
+      try{
+        const ns=await navigator.mediaDevices.getUserMedia({video:true});
+        const newTrack=ns.getVideoTracks()[0];
+        if(S.stream){
+          // Remove old stopped tracks and add new one
+          S.stream.getVideoTracks().forEach(t=>{t.stop();S.stream.removeTrack(t);});
+          S.stream.addTrack(newTrack);
+        }else{S.stream=ns;}
+        // Update self tile video
+        const raw=$('tile-self')?.querySelector('.vid-raw');
+        if(raw){raw.srcObject=S.stream;raw.play().catch(()=>{});}
+        if(S._camVid){S._camVid.srcObject=S.stream;S._camVid.play().catch(()=>{});}
+        // Re-share updated stream with peers
+        Object.values(S.mediaCalls).forEach(call=>{
+          try{const sender=call.peerConnection?.getSenders().find(s=>s.track?.kind==='video');if(sender)sender.replaceTrack(newTrack);}catch(e){}
+        });
+      }catch(e){S.camOn=false;toast('Camera access denied');return;}
+    }
+  }else{
+    if(S.stream)S.stream.getVideoTracks().forEach(t=>t.enabled=false);
+  }
   const btn=$('btn-cam');
   btn.textContent=S.camOn?'📷':'🚫';
   btn.nextElementSibling.textContent=S.camOn?'Camera':'Cam Off';
@@ -1417,7 +1519,7 @@ function startRecording(){
 
     if(S.sharing){
       // SPOTLIGHT: screen on left 70%, camera PIP on right
-      const scrW=Math.round(RW*0.70);
+      const scrW=Math.round(RW*0.82);
       const camW=RW-scrW-PAD*3, camH=Math.round(camW/1.7778);
       const camX=scrW+PAD*2, camY=Math.round((RH-camH)/2);
 
@@ -1513,6 +1615,7 @@ function startRecording(){
     $('m-rec-ind').classList.add('on');$('rec-badge').classList.add('show');
     toast('⏺️ Recording started — full meeting layout captured');
     addSys('Recording started');
+    broadcast({type:'rec-status',on:true});
   }catch(e){
     cancelAnimationFrame(S.recAnim);
     toast('Recording error: '+e.message);
@@ -1529,6 +1632,7 @@ function stopRecording(){
   const rl=$('rec-label');if(rl)rl.textContent='Record';
   $('m-rec-ind').classList.remove('on');$('rec-badge').classList.remove('show');
   toast('Saving recording to your device…');
+  broadcast({type:'rec-status',on:false});
 }
 
 function saveRecording(){
@@ -1562,6 +1666,7 @@ function startTranscript(){
     }
     if(fin){
       S.transcript.push({t:new Date(),speaker:S.name,text:fin.trim()});
+      broadcast({type:'transcript',speaker:S.name,text:fin.trim()});
       const p=document.createElement('p');p.style.marginBottom='3px';
       p.innerHTML=`<strong style="color:var(--text)">${esc(S.name)}:</strong> ${esc(fin.trim())}`;
       const ie=box.querySelector('.interim');if(ie)ie.remove();
@@ -1663,7 +1768,15 @@ const AI_PROMPTS={
 };
 
 async function genAI(type){
-  if(!S.apiKey){showAIKeyModal();toast('Add your AI key first');return;}
+  const S_apiKey=getAIKey();
+  if(!S_apiKey){
+    // Show inline key input in AI panel
+    const ri=$('ai-key-row');
+    if(ri)ri.style.display='flex';
+    toast('Enter your key in the AI panel first');
+    tp('ai');
+    return;
+  }
   if(!S.transcript.length){toast('Start 📝 Transcript first to capture content');st('ai');return;}
   const tr=S.transcript.map(e=>`${e.speaker}: ${e.text}`).join('\n');
   const ai=AI_PROMPTS[type];
@@ -1672,7 +1785,7 @@ async function genAI(type){
   try{
     const res=await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
-      headers:{'Content-Type':'application/json','x-api-key':S.apiKey,'anthropic-version':'2023-06-01'},
+      headers:{'Content-Type':'application/json','x-api-key':S_apiKey,'anthropic-version':'2023-06-01'},
       body:JSON.stringify({
         model:'claude-sonnet-4-20250514',max_tokens:1600,
         system:'You are a professional meeting AI assistant. Generate high-quality, structured, actionable content from meeting transcripts. Format clearly with headers and structure.',
@@ -1795,6 +1908,8 @@ function stopAll(){
   // Close all PeerJS connections
   Object.values(S.guestConns).forEach(c=>{try{c.close();}catch(e){}});
   S.guestConns={};
+  Object.values(S.mediaCalls).forEach(c=>{try{c.close();}catch(e){}});
+  S.mediaCalls={};
   if(S.hostConn){try{S.hostConn.close();}catch(e){}}S.hostConn=null;
   if(S.peer){try{S.peer.destroy();}catch(e){}}S.peer=null;
   destroyRecVids();
@@ -1809,6 +1924,10 @@ document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click',e=>{
 document.addEventListener('click',e=>{if(!e.target.closest('#react-pop')&&!e.target.closest('#btn-react'))$('react-pop').classList.remove('show');});
 document.addEventListener('DOMContentLoaded',()=>{
   $('join-code')?.addEventListener('keydown',e=>{if(e.key==='Enter')joinMeeting();});
+  $('join-code')?.addEventListener('input',()=>{
+    const jb=$('join-btn');
+    if(jb)jb.className=$('join-code').value.trim()?'btn btn-primary':'btn btn-ghost';
+  });
   $('your-name')?.addEventListener('keydown',e=>{if(e.key==='Enter')createMeeting();});
   $('chat-inp')?.addEventListener('keydown',e=>{if(e.key==='Enter')sendChat();});
 });
