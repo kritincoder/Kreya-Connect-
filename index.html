@@ -141,6 +141,7 @@ footer{text-align:center;padding:18px;color:var(--text3);font-size:12px;border-t
    z4: vt-overlay (name bar)
 */
 .vid-raw{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1);z-index:1;opacity:0;pointer-events:none;}
+.vid-raw.sharing{object-fit:contain;transform:none;background:#000;}
 .bg-canvas{position:absolute;inset:0;width:100%;height:100%;z-index:2;display:none;}
 .bg-canvas.on{display:block;}
 .vid-direct{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1);z-index:2;}
@@ -617,8 +618,10 @@ const S={
   pendingKnocker:null,
   peer:null,
   hostConn:null,
+  hostUserId:null,  // set by roster msg (the host's MY_ID)
   guestConns:{},
-  mediaCalls:{},         // MediaConnections per peerId
+  mediaCalls:{},
+  remoteStreams:{},      // remote audio/video streams per userId
   recording:false,mediaRecorder:null,recChunks:[],
   recCanvas:null,recCtx:null,recAnim:null,recAudioCtx:null,
   bgAnim:null,
@@ -786,8 +789,12 @@ function setupHostListeners(){
       conn.on('data',data=>{handleGuestMsg(conn,data);});
       conn.on('close',()=>{
         const uid=conn.metadata?.userId;
-        if(uid&&S.participants[uid])removePeer(uid,S.participants[uid].name);
-        delete S.guestConns[conn.metadata?.userId||conn.peer];
+        if(uid){
+          const pname=S.participants[uid]?.name||'A participant';
+          removePeer(uid,pname);
+          broadcastToGuests({type:'participant-left',userId:uid,name:pname},'');
+        }
+        delete S.guestConns[uid||conn.peer];
       });
     });
   });
@@ -795,9 +802,10 @@ function setupHostListeners(){
   S.peer.on('call',call=>{
     call.answer(S.stream||new MediaStream()); // answer with our stream
     call.on('stream',remoteStream=>{
-      // Derive userId from peerId: 'kuser-{userId}'
-      const uid=call.peer.replace('kuser-','');
+      const uid=call.peer.startsWith('kuser-')?call.peer.slice(6):call.peer;
       displayPeerStream(uid,remoteStream);
+      S.remoteStreams=S.remoteStreams||{};
+      S.remoteStreams[uid]=remoteStream;
     });
     call.on('error',e=>console.warn('Media call error',e));
     S.mediaCalls[call.peer]=call;
@@ -825,7 +833,7 @@ function handleGuestMsg(conn,msg){
         // Tell new guest about everyone already in the room
         const roster=Object.values(S.participants).map(p=>({userId:p.userId,name:p.name,color:p.color}));
         roster.push({userId:MY_ID,name:S.name,color:'#6366f1',isHost:true});
-        conn.send({type:'roster',participants:roster});
+        conn.send({type:'roster',participants:roster,hostId:MY_ID});
       }
       break;
     case'chat':
@@ -895,17 +903,19 @@ function connectAsGuest(){
       if($('s-meeting').classList.contains('active'))addSys('Disconnected from host');
     });
   });
-  // Answer media calls from host (host calls us after admit)
+  // Answer incoming media calls (from host after admit, or from other guests)
   guestPeer.on('call',call=>{
     call.answer(S.stream||new MediaStream());
     call.on('stream',remoteStream=>{
-      const uid=call.peer.replace('kuser-','').replace('h','');
-      // Host stream: show in a host tile if not already there
-      if(!S.participants['host-stream']){
-        S.participants['host-stream']={userId:'host-stream',name:'Host',color:'#6366f1',muted:false,camOn:true,handRaised:false};
-        renderGrid();renderParticipants();
+      // Derive real userId: 'kuser-{userId}' → userId
+      let uid=call.peer.startsWith('kuser-')?call.peer.slice(6):null;
+      // If we don't have this uid as a participant yet, use hostUserId
+      if(!uid||!S.participants[uid]) uid=S.hostUserId||uid||call.peer;
+      if(uid&&S.participants[uid]){
+        displayPeerStream(uid,remoteStream);
       }
-      displayPeerStream('host-stream',remoteStream);
+      // Always store for audio mixing
+      if(uid){S.remoteStreams[uid]=remoteStream;}
     });
     call.on('error',e=>console.warn('call error',e));
     S.mediaCalls[call.peer]=call;
@@ -922,9 +932,9 @@ function connectAsGuest(){
 function handleHostMsg(msg){
   switch(msg.type){
     case'admitted':
+      if(msg.hostId)S.hostUserId=msg.hostId;
       toast('✅ You have been admitted!');
       startMeeting();
-      // Tell host we joined via data channel
       const myColor=COLORS[Math.floor(Math.random()*COLORS.length)];
       if(S.hostConn&&S.hostConn.open)S.hostConn.send({type:'participant-joined',userId:MY_ID,name:S.name,color:myColor});
       // Call host with our stream so they can hear/see us
@@ -933,16 +943,18 @@ function handleHostMsg(msg){
           try{
             const call=S.peer.call(hostPeerId(),S.stream);
             call.on('stream',remoteStream=>{
-              if(!S.participants['host']){
-                S.participants['host']={userId:'host',name:'Host',color:'#6366f1',muted:false,camOn:true,handRaised:false};
-                renderGrid();renderParticipants();
+              // Attach to host's real tile using hostUserId from roster
+              const hid=S.hostUserId;
+              if(hid&&S.participants[hid]){
+                displayPeerStream(hid,remoteStream);
+                S.remoteStreams=S.remoteStreams||{};
+                S.remoteStreams[hid]=remoteStream;
               }
-              displayPeerStream('host',remoteStream);
             });
             call.on('error',e=>console.warn('guest->host call error',e));
             S.mediaCalls[hostPeerId()]=call;
           }catch(e){console.warn('guest call failed',e);}
-        },400);
+        },600);
       }
       break;
     case'rejected':
@@ -950,7 +962,7 @@ function handleHostMsg(msg){
       setTimeout(goHome,2200);
       break;
     case'roster':
-      // Add everyone already in the room
+      if(msg.hostId)S.hostUserId=msg.hostId;
       (msg.participants||[]).forEach(p=>{
         if(p.userId!==MY_ID&&!S.participants[p.userId]){
           S.participants[p.userId]={userId:p.userId,name:p.name,color:p.color,muted:false,camOn:true,handRaised:false};
@@ -984,13 +996,17 @@ function handleHostMsg(msg){
     case'remove':
       if(msg.targetId===MY_ID){toast('Removed by host.');setTimeout(endMeeting,1500);}
       break;
-    case'transcript':
-      if(S.transcribing){
-        const tbox=$('tbox');if(tbox){const p=document.createElement('p');p.style.marginBottom='3px';
-        p.innerHTML=`<strong style="color:var(--text)">${esc(msg.speaker||'?')}:</strong> ${esc(msg.text||'')}`;tbox.appendChild(p);tbox.scrollTop=tbox.scrollHeight;}
-        S.transcript.push({t:new Date(),speaker:msg.speaker,text:msg.text});
+    case'transcript':{
+      // Show all remote transcripts in the panel (regardless of local transcribing state)
+      const tbox=$('tbox');
+      if(tbox){
+        const oldfade=tbox.querySelector('.ts-fade');if(oldfade)oldfade.remove();
+        const p=document.createElement('p');p.style.marginBottom='3px';
+        p.innerHTML=`<strong style="color:var(--accent2)">${esc(msg.speaker||'?')}:</strong> ${esc(msg.text||'')}`;
+        tbox.appendChild(p);tbox.scrollTop=tbox.scrollHeight;
       }
-      break;
+      S.transcript.push({t:new Date(),speaker:msg.speaker,text:msg.text});
+      break;}
     case'rec-status':
       $('m-rec-ind')?.classList[msg.on?'add':'remove']('on');
       $('rec-badge')?.classList[msg.on?'add':'remove']('show');
@@ -1018,7 +1034,7 @@ function admitKnocker(){
   if(!S.pendingKnocker)return;
   const uid=S.pendingKnocker.userId;
   const name=S.pendingKnocker.name;
-  sendToGuest(uid,{type:'admitted',targetId:uid});
+  sendToGuest(uid,{type:'admitted',targetId:uid,hostId:MY_ID});
   toast(`✅ ${name} admitted`);
   hideAdmitBar();
   // Call guest with our video/audio stream
@@ -1063,7 +1079,15 @@ function makeHiddenVid(muted){
 }
 function initCamVid(){
   if(!S._camVid)S._camVid=makeHiddenVid(true);
-  if(S.stream){S._camVid.srcObject=S.stream;S._camVid.play().catch(()=>{});}
+  if(S.stream){
+    S._camVid.srcObject=S.stream;
+    S._camVid.play().then(()=>{
+      // Video is playing and ready
+    }).catch(()=>{
+      // Autoplay blocked — retry on user gesture
+      document.addEventListener('click',()=>S._camVid?.play().catch(()=>{}),{once:true});
+    });
+  }
 }
 function initScrVid(){
   if(!S._scrVid)S._scrVid=makeHiddenVid(false);
@@ -1106,7 +1130,14 @@ function renderGrid(){
 
   if(S.stream){
     const raw=selfTile.querySelector('.vid-raw');
-    if(raw){raw.srcObject=S.stream;raw.play().catch(()=>{});}
+    if(raw){
+      // If currently sharing screen, use screen stream; else camera
+      raw.srcObject=S.sharing?S.shareStream:S.stream;
+      if(S.sharing){raw.classList.add('sharing');}else{raw.classList.remove('sharing');}
+      raw.style.opacity=S.camOn&&!S.sharing?'1':(S.sharing?'1':'0');
+      raw.style.display=(S.camOn||S.sharing)?'block':'none';
+      raw.play().catch(()=>{});
+    }
   }
 
   peers.forEach(p=>{
@@ -1154,6 +1185,12 @@ function selfSyncUI(){
     if(bgc)bgc.classList.remove('on');
   }
   const ic=$('ti-self');if(ic)ic.textContent=S.muted?'🔇':'';
+  // Ensure vid-raw is visible when cam is on and no bg active
+  if(raw&&S.camOn&&S.currentBg==='none'){
+    raw.style.opacity='1';
+    raw.style.display='block';
+    if(!raw.srcObject&&S.stream){raw.srcObject=S.stream;raw.play().catch(()=>{});}
+  }
 }
 
 function updatePeerTile(uid){
@@ -1198,6 +1235,10 @@ function displayPeerStream(uid,remoteStream){
 function removePeer(uid,name){
   const n=S.participants[uid]?.name||name||'A participant';
   delete S.participants[uid];
+  delete S.remoteStreams[uid];
+  // Close media call for this peer
+  const callKey='kuser-'+uid;
+  if(S.mediaCalls[callKey]){try{S.mediaCalls[callKey].close();}catch(e){} delete S.mediaCalls[callKey];}
   renderGrid();renderParticipants();addSys(`${n} left`);
 }
 
@@ -1245,20 +1286,33 @@ function startBgCanvas(){
     if(bgc.width!==w)bgc.width=w;
     if(bgc.height!==h2)bgc.height=h2;
     const ctx=bgc.getContext('2d');
-    // Use S._camVid — always playing off-screen, never display:none
+    // S._camVid is the reliable source — always off-screen, always decoding
     const src=S._camVid;
+    if(!src||!src.videoWidth){
+      // Not ready yet — draw dark placeholder and wait
+      ctx.fillStyle='#06080f';ctx.fillRect(0,0,w,h2);
+      S.bgAnim=requestAnimationFrame(drawFrame);
+      return;
+    }
     if(S.currentBg==='blur'){
-      if(src&&src.videoWidth){
-        ctx.save();ctx.filter='blur(22px)';coverDraw(ctx,src,0,0,w,h2,true);ctx.restore();
-        coverDraw(ctx,src,0,0,w,h2,true);
-      }
+      ctx.save();ctx.filter='blur(22px)';coverDraw(ctx,src,0,0,w,h2,true);ctx.restore();
+      coverDraw(ctx,src,0,0,w,h2,true);
     }else{
       drawSceneBg(ctx,w,h2,S.currentBg);
       coverDraw(ctx,src,0,0,w,h2,true);
     }
     S.bgAnim=requestAnimationFrame(drawFrame);
   }
-  drawFrame();
+  // Wait until S._camVid is ready before starting
+  if(S._camVid&&S._camVid.videoWidth>0){
+    drawFrame();
+  }else{
+    // Poll until video data is available
+    const waitId=setInterval(()=>{
+      if(S._camVid&&S._camVid.videoWidth>0){clearInterval(waitId);drawFrame();}
+      else if(S.currentBg==='none'){clearInterval(waitId);} // cancelled
+    },50);
+  }
 }
 function stopBgCanvas(){
   if(S.bgAnim){cancelAnimationFrame(S.bgAnim);S.bgAnim=null;}
@@ -1328,33 +1382,23 @@ function toggleMic(){applyMute(!S.muted);}
 async function toggleCam(){
   S.camOn=!S.camOn;
   if(S.camOn){
-    // Try to re-enable existing track first
+    // Just re-enable — disabled tracks keep device free without losing the track
     const tracks=S.stream?S.stream.getVideoTracks():[];
-    const alive=tracks.find(t=>t.readyState!=='ended');
-    if(alive){
-      alive.enabled=true;
+    if(tracks.length){
+      tracks.forEach(t=>{t.enabled=true;});
     }else{
-      // Track was stopped (device released) — re-request camera
+      // No track at all — request camera fresh
       try{
-        const ns=await navigator.mediaDevices.getUserMedia({video:true});
-        const newTrack=ns.getVideoTracks()[0];
-        if(S.stream){
-          // Remove old stopped tracks and add new one
-          S.stream.getVideoTracks().forEach(t=>{t.stop();S.stream.removeTrack(t);});
-          S.stream.addTrack(newTrack);
-        }else{S.stream=ns;}
-        // Update self tile video
+        const ns=await navigator.mediaDevices.getUserMedia({video:true,audio:false});
+        ns.getVideoTracks().forEach(t=>S.stream.addTrack(t));
         const raw=$('tile-self')?.querySelector('.vid-raw');
         if(raw){raw.srcObject=S.stream;raw.play().catch(()=>{});}
         if(S._camVid){S._camVid.srcObject=S.stream;S._camVid.play().catch(()=>{});}
-        // Re-share updated stream with peers
-        Object.values(S.mediaCalls).forEach(call=>{
-          try{const sender=call.peerConnection?.getSenders().find(s=>s.track?.kind==='video');if(sender)sender.replaceTrack(newTrack);}catch(e){}
-        });
       }catch(e){S.camOn=false;toast('Camera access denied');return;}
     }
   }else{
-    if(S.stream)S.stream.getVideoTracks().forEach(t=>t.enabled=false);
+    // Disable tracks — releases the camera light; track remains available
+    if(S.stream)S.stream.getVideoTracks().forEach(t=>{t.enabled=false;});
   }
   const btn=$('btn-cam');
   btn.textContent=S.camOn?'📷':'🚫';
@@ -1374,19 +1418,29 @@ async function toggleShare(){
       });
       S.shareStream=scrStream;S.sharing=true;
 
-      // Feed screen into dedicated off-screen video (for recording)
+      // Off-screen video for recording canvas
       initScrVid();
       S._scrVid.srcObject=scrStream;
       S._scrVid.play().catch(()=>{});
 
+      // Replace video track in all active peer calls so remote sees screen
+      const scrVideoTrack=scrStream.getVideoTracks()[0];
+      Object.values(S.mediaCalls).forEach(call=>{
+        try{
+          const pc=call.peerConnection;
+          const sender=pc?.getSenders().find(s=>s.track?.kind==='video');
+          if(sender&&scrVideoTrack)sender.replaceTrack(scrVideoTrack);
+        }catch(e){}
+      });
+
       const btn=$('btn-share');btn.className='cb cb-a';btn.nextElementSibling.textContent='Stop';
 
-      // Show screen in self tile for live preview
+      // Show screen in self tile
       const tile=$('tile-self');
       const raw=tile?.querySelector('.vid-raw');
       if(raw){
         raw.srcObject=scrStream;
-        raw.style.transform='none';
+        raw.classList.add('sharing');
         raw.style.opacity='1';
         raw.style.display='block';
         raw.play().catch(()=>{});
@@ -1394,7 +1448,7 @@ async function toggleShare(){
       const bgc=$('bgc-self');if(bgc)bgc.classList.remove('on');
       stopBgCanvas();
 
-      toast('🖥️ Screen sharing — captured in recording');
+      toast('🖥️ Screen sharing started');
       scrStream.getVideoTracks()[0].onended=stopShare;
     }catch(e){toast('Screen share cancelled');}
   }else{stopShare();}
@@ -1404,13 +1458,23 @@ function stopShare(){
   S.sharing=false;
   if(S._scrVid){S._scrVid.srcObject=null;}
   S.shareStream=null;
+  // Restore camera track in peer calls
+  const camTrack=S.stream?.getVideoTracks().find(t=>t.readyState!=='ended');
+  if(camTrack){
+    Object.values(S.mediaCalls).forEach(call=>{
+      try{
+        const pc=call.peerConnection;
+        const sender=pc?.getSenders().find(s=>s.track?.kind==='video');
+        if(sender)sender.replaceTrack(camTrack);
+      }catch(e){}
+    });
+  }
   const btn=$('btn-share');btn.className='cb cb-n';btn.nextElementSibling.textContent='Share';
-  // Restore camera to self tile
   const tile=$('tile-self');
   const raw=tile?.querySelector('.vid-raw');
   if(raw&&S.stream){
     raw.srcObject=S.stream;
-    raw.style.transform='scaleX(-1)';
+    raw.classList.remove('sharing');
     raw.play().catch(()=>{});
   }
   selfSyncUI();
@@ -1497,18 +1561,26 @@ function startRecording(){
   const ctx=rc.getContext('2d',{alpha:false});
   S.recCanvas=rc;S.recCtx=ctx;
 
-  // ── Mixed audio ──
+  // ── Mixed audio: local mic + screen audio + ALL remote participants ──
   let audioDest=null;
   try{
     const aC=new AudioContext({sampleRate:48000});S.recAudioCtx=aC;
     audioDest=aC.createMediaStreamDestination();
-    if(S.stream&&S.stream.getAudioTracks().length){
-      aC.createMediaStreamSource(S.stream).connect(audioDest);
+    // Local microphone
+    if(S.stream&&S.stream.getAudioTracks().length>0){
+      aC.createMediaStreamSource(new MediaStream(S.stream.getAudioTracks())).connect(audioDest);
     }
-    if(S.shareStream&&S.shareStream.getAudioTracks().length){
-      aC.createMediaStreamSource(S.shareStream).connect(audioDest);
+    // Screen share audio
+    if(S.shareStream&&S.shareStream.getAudioTracks().length>0){
+      aC.createMediaStreamSource(new MediaStream(S.shareStream.getAudioTracks())).connect(audioDest);
     }
-  }catch(e){}
+    // ALL remote participant audio streams
+    Object.values(S.remoteStreams||{}).forEach(rs=>{
+      if(rs&&rs.getAudioTracks().length>0){
+        try{aC.createMediaStreamSource(new MediaStream(rs.getAudioTracks())).connect(audioDest);}catch(e){}
+      }
+    });
+  }catch(e){console.warn('Audio mix error',e);}
 
   // ── Main draw loop ──
   // Uses S._camVid (always = camera) and S._scrVid (always = screen when sharing)
@@ -1913,7 +1985,7 @@ function stopAll(){
   if(S.hostConn){try{S.hostConn.close();}catch(e){}}S.hostConn=null;
   if(S.peer){try{S.peer.destroy();}catch(e){}}S.peer=null;
   destroyRecVids();
-  S.participants={};S.isHost=false;S.transcript=[];
+  S.participants={};S.remoteStreams={};S.isHost=false;S.transcript=[];S.hostUserId=null;
   S.recording=false;S.sharing=false;S.handRaised=false;S.currentBg='none';
 }
 
