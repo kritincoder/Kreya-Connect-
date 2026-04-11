@@ -39,7 +39,7 @@ nav{display:flex;align-items:center;justify-content:space-between;padding:16px 4
 
 /* BUTTONS */
 .btn{padding:9px 20px;border-radius:var(--rs);border:none;font-size:13px;font-weight:500;transition:all 0.18s;display:inline-flex;align-items:center;gap:6px;}
-.btn-ghost{background:transparent;color:var(--text2);border:1px solid var(--border);}
+.btn-ghost{background:transparent;color:var(--text2);border:1px solid var(--border);transition:all 0.22s;}
 .btn-ghost:hover{background:var(--bg3);color:var(--text);}
 .btn-primary{background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;}
 .btn-primary:hover{opacity:0.9;transform:translateY(-1px);}
@@ -338,7 +338,7 @@ footer{text-align:center;padding:18px;color:var(--text3);font-size:12px;border-t
       <button class="btn btn-primary" style="width:100%;" onclick="createMeeting()">+ New Meeting</button>
       <div class="divider">or join existing</div>
       <div class="join-row" id="join-sec">
-        <input class="input" id="join-code" placeholder="Meeting code (kreya-xxx-xxx)" autocomplete="off">
+        <input class="input" id="join-code" placeholder="Meeting code (kreya-xxx-xxx)" autocomplete="off" oninput="const jb=document.getElementById('join-btn');if(!jb)return;const v=this.value.trim();jb.style.background=v?'linear-gradient(135deg,#6366f1,#8b5cf6)':'';jb.style.color=v?'#fff':'';jb.style.border=v?'none':'';jb.style.fontWeight=v?'600':'';jb.style.transform=v?'scale(1.02)':'';jb.className=v?'btn btn-primary':'btn btn-ghost';">
         <button class="btn btn-ghost" id="join-btn" onclick="joinMeeting()">Join</button>
       </div>
     </div>
@@ -625,6 +625,7 @@ const S={
   recording:false,mediaRecorder:null,recChunks:[],
   recCanvas:null,recCtx:null,recAnim:null,recAudioCtx:null,
   bgAnim:null,
+  bgPollId:null,
   gUser:null,
   _camVid:null,
   _scrVid:null,
@@ -1081,10 +1082,13 @@ function initCamVid(){
   if(!S._camVid)S._camVid=makeHiddenVid(true);
   if(S.stream){
     S._camVid.srcObject=S.stream;
-    S._camVid.play().then(()=>{
-      // Video is playing and ready
-    }).catch(()=>{
-      // Autoplay blocked — retry on user gesture
+    // Ensure vid-raw in self tile also has stream (sometimes it doesn't after renderGrid)
+    const selfRaw=$('tile-self')?.querySelector('.vid-raw');
+    if(selfRaw&&!selfRaw.srcObject){
+      selfRaw.srcObject=S.stream;
+      selfRaw.play().catch(()=>{});
+    }
+    S._camVid.play().catch(()=>{
       document.addEventListener('click',()=>S._camVid?.play().catch(()=>{}),{once:true});
     });
   }
@@ -1173,24 +1177,34 @@ function makeTile(id,name,color,isSelf,p){
 
 function selfSyncUI(){
   const tile=$('tile-self');if(!tile)return;
-  const av=$(`av-self`),raw=tile.querySelector('.vid-raw');
+  const av=$('av-self');
+  const raw=tile.querySelector('.vid-raw');
   const bgc=$('bgc-self');
+  const hasBg=S.currentBg!=='none';
+
+  // Avatar: show when camera is off
   if(av)av.style.display=S.camOn?'none':'flex';
-  // If bg active, show canvas; else show raw video
-  if(S.currentBg!=='none'&&S.camOn){
-    if(raw)raw.style.opacity='0';
-    if(bgc)bgc.classList.add('on');
-  }else{
-    if(raw){raw.style.opacity=S.camOn?'1':'0';raw.style.display=S.camOn?'block':'none';}
-    if(bgc)bgc.classList.remove('on');
+
+  // Canvas: visible only when bg active + cam on
+  if(bgc){
+    if(hasBg&&S.camOn){bgc.classList.add('on');}
+    else{bgc.classList.remove('on');}
   }
+
+  // Raw video: visible when cam on + no bg (or screen sharing)
+  if(raw){
+    if(S.sharing){
+      raw.style.opacity='1';raw.style.display='block';
+    }else if(S.camOn&&!hasBg){
+      raw.style.opacity='1';raw.style.display='block';
+      if(!raw.srcObject&&S.stream){raw.srcObject=S.stream;raw.play().catch(()=>{});}
+    }else{
+      // cam off OR bg active (canvas handles it)
+      raw.style.opacity='0';
+    }
+  }
+
   const ic=$('ti-self');if(ic)ic.textContent=S.muted?'🔇':'';
-  // Ensure vid-raw is visible when cam is on and no bg active
-  if(raw&&S.camOn&&S.currentBg==='none'){
-    raw.style.opacity='1';
-    raw.style.display='block';
-    if(!raw.srcObject&&S.stream){raw.srcObject=S.stream;raw.play().catch(()=>{});}
-  }
 }
 
 function updatePeerTile(uid){
@@ -1210,9 +1224,29 @@ function addPeer(uid,name,color){
   renderGrid();renderParticipants();
 }
 
+// Dynamically connect a remote stream's audio into the recording mixer.
+// Called whenever a new peer stream arrives (before or after recording starts).
+function mixRemoteAudio(uid,remoteStream){
+  if(!remoteStream||!remoteStream.getAudioTracks().length)return;
+  if(!S.recRemoteNodes)S.recRemoteNodes={};
+  // Disconnect old node for this uid if exists
+  if(S.recRemoteNodes[uid]){try{S.recRemoteNodes[uid].disconnect();}catch(e){} delete S.recRemoteNodes[uid];}
+  if(S.recording&&S.recAudioCtx&&S.recAudioDest){
+    try{
+      const tracks=remoteStream.getAudioTracks().filter(t=>t.readyState!=='ended');
+      if(!tracks.length)return;
+      const node=S.recAudioCtx.createMediaStreamSource(new MediaStream(tracks));
+      node.connect(S.recAudioDest);
+      S.recRemoteNodes[uid]=node;
+    }catch(e){console.warn('mixRemoteAudio error',e);}
+  }
+}
+
 // Attach a remote media stream to a participant tile
 function displayPeerStream(uid,remoteStream){
-  // Wait for tile to exist in DOM (may be created by addPeer/renderGrid)
+  S.remoteStreams[uid]=remoteStream;
+  // Mix audio into recording (works even if recording hasn't started yet — will be picked up on start)
+  mixRemoteAudio(uid,remoteStream);
   const attach=()=>{
     const tile=$(`tile-${uid}`);
     if(!tile){setTimeout(attach,200);return;}
@@ -1221,10 +1255,9 @@ function displayPeerStream(uid,remoteStream){
       raw.srcObject=remoteStream;
       raw.style.opacity='1';
       raw.style.display='block';
-      raw.style.transform='none'; // no mirror for remote video
+      raw.style.transform='none';
       raw.play().catch(()=>{});
     }
-    // Show video, hide avatar
     const av=$(`av-${uid}`);if(av)av.style.display='none';
     // Update participant status
     if(S.participants[uid])S.participants[uid].camOn=true;
@@ -1250,6 +1283,8 @@ function setBg(bg){
   document.querySelectorAll('.bgo').forEach(el=>el.classList.remove('sel'));
   $(`bgo-${bg}`).classList.add('sel');
   stopBgCanvas();
+  // Ensure camera video source is ready before starting BG canvas
+  if(bg!=='none'&&S.stream&&(!S._camVid||!S._camVid.srcObject)){initCamVid();}
   if(bg==='none'){
     selfSyncUI();
     toast('Background removed');
@@ -1262,9 +1297,17 @@ function setBg(bg){
 function startBgCanvas(){
   const tile=$('tile-self');if(!tile)return;
   const bgc=$('bgc-self');if(!bgc)return;
-  bgc.classList.add('on');
+
+  // Always ensure _camVid is connected to current stream
+  if(!S._camVid){S._camVid=makeHiddenVid(true);}
+  if(S.stream&&(!S._camVid.srcObject||S._camVid.srcObject!==S.stream)){
+    S._camVid.srcObject=S.stream;
+    S._camVid.play().catch(()=>{});
+  }
+
   const raw=tile.querySelector('.vid-raw');
-  if(raw){raw.style.opacity='0';}
+  if(raw)raw.style.opacity='0';       // canvas is on top at z-index:2
+  bgc.classList.add('on');
   const av=$('av-self');if(av)av.style.display=S.camOn?'none':'flex';
 
   function coverDraw(ctx,src,x,y,w,h,mirror){
@@ -1276,26 +1319,24 @@ function startBgCanvas(){
     ctx.save();
     if(mirror){ctx.translate(x+w,y);ctx.scale(-1,1);ctx.drawImage(src,sx,sy,sw,sh,0,0,w,h);}
     else{ctx.drawImage(src,sx,sy,sw,sh,x,y,w,h);}
-    ctx.restore();
-    return true;
+    ctx.restore();return true;
   }
 
   function drawFrame(){
-    if(!S.camOn||S.currentBg==='none'){S.bgAnim=requestAnimationFrame(drawFrame);return;}
+    // Stop if cancelled or bg removed
+    if(S.bgAnim===null){return;}
+    if(!S.camOn||S.currentBg==='none'){stopBgCanvas();return;}
     const w=tile.clientWidth||640,h2=tile.clientHeight||480;
-    if(bgc.width!==w)bgc.width=w;
-    if(bgc.height!==h2)bgc.height=h2;
+    if(bgc.width!==w||bgc.height!==h2){bgc.width=w;bgc.height=h2;}
     const ctx=bgc.getContext('2d');
-    // S._camVid is the reliable source — always off-screen, always decoding
+    // Primary source: S._camVid (off-screen, always decoding)
     const src=S._camVid;
-    if(!src||!src.videoWidth){
-      // Not ready yet — draw dark placeholder and wait
+    if(!src||!src.videoWidth||!src.videoHeight){
       ctx.fillStyle='#06080f';ctx.fillRect(0,0,w,h2);
-      S.bgAnim=requestAnimationFrame(drawFrame);
-      return;
+      S.bgAnim=requestAnimationFrame(drawFrame);return;
     }
     if(S.currentBg==='blur'){
-      ctx.save();ctx.filter='blur(22px)';coverDraw(ctx,src,0,0,w,h2,true);ctx.restore();
+      ctx.save();ctx.filter='blur(20px)';coverDraw(ctx,src,0,0,w,h2,true);ctx.restore();
       coverDraw(ctx,src,0,0,w,h2,true);
     }else{
       drawSceneBg(ctx,w,h2,S.currentBg);
@@ -1303,23 +1344,37 @@ function startBgCanvas(){
     }
     S.bgAnim=requestAnimationFrame(drawFrame);
   }
-  // Wait until S._camVid is ready before starting
-  if(S._camVid&&S._camVid.videoWidth>0){
-    drawFrame();
+
+  function startLoop(){
+    if(S.bgAnim!==null)return; // already running
+    S.bgAnim=requestAnimationFrame(drawFrame);
+  }
+
+  // Wait for video data before starting (store poll id so we can cancel it)
+  if(S.bgPollId){clearInterval(S.bgPollId);S.bgPollId=null;}
+  if(S._camVid.videoWidth>0){
+    startLoop();
   }else{
-    // Poll until video data is available
-    const waitId=setInterval(()=>{
-      if(S._camVid&&S._camVid.videoWidth>0){clearInterval(waitId);drawFrame();}
-      else if(S.currentBg==='none'){clearInterval(waitId);} // cancelled
-    },50);
+    S.bgPollId=setInterval(()=>{
+      if(!S._camVid||S.currentBg==='none'){clearInterval(S.bgPollId);S.bgPollId=null;return;}
+      if(S._camVid.videoWidth>0){clearInterval(S.bgPollId);S.bgPollId=null;startLoop();}
+    },40);
   }
 }
 function stopBgCanvas(){
-  if(S.bgAnim){cancelAnimationFrame(S.bgAnim);S.bgAnim=null;}
+  // Cancel both the rAF loop and the startup poll
+  if(S.bgAnim){cancelAnimationFrame(S.bgAnim);}
+  S.bgAnim=null;
+  if(S.bgPollId){clearInterval(S.bgPollId);S.bgPollId=null;}
   const bgc=$('bgc-self');if(bgc)bgc.classList.remove('on');
   const tile=$('tile-self');
   const raw=tile?.querySelector('.vid-raw');
-  if(raw){raw.style.opacity=S.camOn?'1':'0';}
+  if(raw&&!S.sharing){
+    if(!raw.srcObject&&S.stream){raw.srcObject=S.stream;raw.play().catch(()=>{});}
+    raw.style.opacity=S.camOn?'1':'0';
+    raw.style.display=S.camOn?'block':'none';
+    raw.classList.remove('sharing');
+  }
 }
 
 function drawSceneBg(ctx,w,h,bg){
@@ -1379,26 +1434,47 @@ function applyMute(m,silent){
 }
 function toggleMic(){applyMute(!S.muted);}
 
+// Create a 1-frame black video track (for sending to peers when cam is off)
+function makeBlackTrack(){
+  const c=document.createElement('canvas');c.width=2;c.height=2;
+  c.getContext('2d').fillRect(0,0,2,2);
+  return c.captureStream(1).getVideoTracks()[0];
+}
+
 async function toggleCam(){
   S.camOn=!S.camOn;
   if(S.camOn){
-    // Just re-enable — disabled tracks keep device free without losing the track
-    const tracks=S.stream?S.stream.getVideoTracks():[];
-    if(tracks.length){
-      tracks.forEach(t=>{t.enabled=true;});
-    }else{
-      // No track at all — request camera fresh
-      try{
-        const ns=await navigator.mediaDevices.getUserMedia({video:true,audio:false});
-        ns.getVideoTracks().forEach(t=>S.stream.addTrack(t));
-        const raw=$('tile-self')?.querySelector('.vid-raw');
-        if(raw){raw.srcObject=S.stream;raw.play().catch(()=>{});}
-        if(S._camVid){S._camVid.srcObject=S.stream;S._camVid.play().catch(()=>{});}
-      }catch(e){S.camOn=false;toast('Camera access denied');return;}
-    }
+    try{
+      const ns=await navigator.mediaDevices.getUserMedia({
+        video:{width:{ideal:1280},height:{ideal:720}},audio:false
+      });
+      const newVTrack=ns.getVideoTracks()[0];
+      if(!newVTrack){S.camOn=false;return;}
+      // Remove stopped tracks, add new live track
+      if(S.stream){
+        S.stream.getVideoTracks().forEach(t=>{try{t.stop();}catch(e){}S.stream.removeTrack(t);});
+        S.stream.addTrack(newVTrack);
+      }else{
+        S.stream=ns;
+      }
+      // Update off-screen camera video
+      if(S._camVid){S._camVid.srcObject=S.stream;S._camVid.play().catch(()=>{});}
+      // Update self tile
+      const raw=$('tile-self')?.querySelector('.vid-raw');
+      if(raw&&!S.sharing){raw.srcObject=S.stream;raw.play().catch(()=>{});}
+      // Send live camera to all peers
+      Object.values(S.mediaCalls).forEach(call=>{
+        try{const pc=call.peerConnection;const s=pc?.getSenders().find(s=>s.track?.kind==='video');if(s)s.replaceTrack(newVTrack);}catch(e){}
+      });
+    }catch(e){S.camOn=false;toast('Camera permission denied — check browser settings');return;}
   }else{
-    // Disable tracks — releases the camera light; track remains available
-    if(S.stream)S.stream.getVideoTracks().forEach(t=>{t.enabled=false;});
+    // Stop the video track fully (releases OS camera light)
+    if(S.stream){S.stream.getVideoTracks().forEach(t=>{try{t.stop();}catch(e){}});}
+    // Send a black frame to peers so connection stays alive
+    const blackTrack=makeBlackTrack();
+    Object.values(S.mediaCalls).forEach(call=>{
+      try{const pc=call.peerConnection;const s=pc?.getSenders().find(s=>s.track?.kind==='video');if(s)s.replaceTrack(blackTrack);}catch(e){}
+    });
   }
   const btn=$('btn-cam');
   btn.textContent=S.camOn?'📷':'🚫';
@@ -1448,6 +1524,15 @@ async function toggleShare(){
       const bgc=$('bgc-self');if(bgc)bgc.classList.remove('on');
       stopBgCanvas();
 
+      // Dynamically add screen audio to recording if already recording
+      if(S.recording&&S.recAudioCtx&&S.recAudioDest&&scrStream.getAudioTracks().length>0){
+        try{
+          if(S.recScrNode){try{S.recScrNode.disconnect();}catch(e){}}
+          const scNode=S.recAudioCtx.createMediaStreamSource(new MediaStream(scrStream.getAudioTracks().filter(t=>t.readyState!=='ended')));
+          scNode.connect(S.recAudioDest);
+          S.recScrNode=scNode;
+        }catch(e){console.warn('Screen audio mix error',e);}
+      }
       toast('🖥️ Screen sharing started');
       scrStream.getVideoTracks()[0].onended=stopShare;
     }catch(e){toast('Screen share cancelled');}
@@ -1457,6 +1542,11 @@ async function toggleShare(){
 function stopShare(){
   S.sharing=false;
   if(S._scrVid){S._scrVid.srcObject=null;}
+  // Disconnect screen audio from recording mixer
+  if(S.recScrNode){try{S.recScrNode.disconnect();}catch(e){} S.recScrNode=null;}
+  // Re-connect all remote streams (in case screen share disrupted them)
+  Object.entries(S.remoteStreams||{}).forEach(([uid,rs])=>mixRemoteAudio(uid,rs));
+  if(S.shareStream){S.shareStream.getTracks().forEach(t=>t.stop());}
   S.shareStream=null;
   // Restore camera track in peer calls
   const camTrack=S.stream?.getVideoTracks().find(t=>t.readyState!=='ended');
@@ -1566,6 +1656,7 @@ function startRecording(){
   try{
     const aC=new AudioContext({sampleRate:48000});S.recAudioCtx=aC;
     audioDest=aC.createMediaStreamDestination();
+    S.recAudioDest=audioDest; // store for dynamic additions
     // Local microphone
     if(S.stream&&S.stream.getAudioTracks().length>0){
       aC.createMediaStreamSource(new MediaStream(S.stream.getAudioTracks())).connect(audioDest);
@@ -1574,10 +1665,15 @@ function startRecording(){
     if(S.shareStream&&S.shareStream.getAudioTracks().length>0){
       aC.createMediaStreamSource(new MediaStream(S.shareStream.getAudioTracks())).connect(audioDest);
     }
-    // ALL remote participant audio streams
-    Object.values(S.remoteStreams||{}).forEach(rs=>{
+    // ALL remote participant audio streams (already connected peers)
+    Object.entries(S.remoteStreams||{}).forEach(([uid,rs])=>{
       if(rs&&rs.getAudioTracks().length>0){
-        try{aC.createMediaStreamSource(new MediaStream(rs.getAudioTracks())).connect(audioDest);}catch(e){}
+        try{
+          const node=aC.createMediaStreamSource(new MediaStream(rs.getAudioTracks().filter(t=>t.readyState!=='ended')));
+          node.connect(audioDest);
+          if(!S.recRemoteNodes)S.recRemoteNodes={};
+          S.recRemoteNodes[uid]=node;
+        }catch(e){}
       }
     });
   }catch(e){console.warn('Audio mix error',e);}
@@ -1700,6 +1796,9 @@ function stopRecording(){
   if(S.recAnim){cancelAnimationFrame(S.recAnim);S.recAnim=null;}
   if(S.recAudioCtx){S.recAudioCtx.close().catch(()=>{});S.recAudioCtx=null;}
   S.recording=false;S.recCanvas=null;S.recCtx=null;
+  if(S.recRemoteNodes){Object.values(S.recRemoteNodes).forEach(n=>{try{n.disconnect();}catch(e){}});S.recRemoteNodes=null;}
+  if(S.recScrNode){try{S.recScrNode.disconnect();}catch(e){} S.recScrNode=null;}
+  S.recAudioDest=null;
   $('btn-rec').className='cb cb-rec';
   const rl=$('rec-label');if(rl)rl.textContent='Record';
   $('m-rec-ind').classList.remove('on');$('rec-badge').classList.remove('show');
@@ -1985,7 +2084,7 @@ function stopAll(){
   if(S.hostConn){try{S.hostConn.close();}catch(e){}}S.hostConn=null;
   if(S.peer){try{S.peer.destroy();}catch(e){}}S.peer=null;
   destroyRecVids();
-  S.participants={};S.remoteStreams={};S.isHost=false;S.transcript=[];S.hostUserId=null;
+  S.participants={};S.remoteStreams={};S.recRemoteNodes={};S.isHost=false;S.transcript=[];S.hostUserId=null;S.bgPollId=null;
   S.recording=false;S.sharing=false;S.handRaised=false;S.currentBg='none';
 }
 
@@ -1996,10 +2095,6 @@ document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click',e=>{
 document.addEventListener('click',e=>{if(!e.target.closest('#react-pop')&&!e.target.closest('#btn-react'))$('react-pop').classList.remove('show');});
 document.addEventListener('DOMContentLoaded',()=>{
   $('join-code')?.addEventListener('keydown',e=>{if(e.key==='Enter')joinMeeting();});
-  $('join-code')?.addEventListener('input',()=>{
-    const jb=$('join-btn');
-    if(jb)jb.className=$('join-code').value.trim()?'btn btn-primary':'btn btn-ghost';
-  });
   $('your-name')?.addEventListener('keydown',e=>{if(e.key==='Enter')createMeeting();});
   $('chat-inp')?.addEventListener('keydown',e=>{if(e.key==='Enter')sendChat();});
 });
